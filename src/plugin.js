@@ -270,9 +270,8 @@ export async function resolve(ref) {
     const stream = await playFromSources(parseMovie(doc));
     // A movie played: note it so the std screen's "Continuar viendo" row populates. Best-effort, in a try/catch
     // that can never fail playback -- and only here, on the success path (playFromSources throws if nothing opens).
-    // Series/episode refs (t:...) are not noted: KingRed's t: ref scheme predates the std kit's m/s/e playedKey
-    // convention, so they wouldn't match a card. Movie recents only (follow-up).
-    if (/^m:\d+$/.test(raw)) { try { standard().notePlayed(raw); } catch (_) { /* recent row is best-effort */ } }
+    // recentOf matches cards by ids.tmdb, and playedKey("m:<id>") -> "t:<id>", which matches the movie card.
+    try { standard().notePlayed(raw); } catch (_) { /* recent row is best-effort */ }
     return stream;
   }
 
@@ -288,7 +287,14 @@ export async function resolve(ref) {
     const { seasons } = parseSeries(doc);
     for (const chapters of seasons.values()) {
       for (const c of chapters) {
-        if (c.season === Number(s) && c.episode === Number(e)) return playFromSources(c.sources);
+        if (c.season === Number(s) && c.episode === Number(e)) {
+          const stream = await playFromSources(c.sources);
+          // An episode played: note the SERIES so the std screen's "Continuar viendo" shows the show (not the
+          // single episode). recentOf matches cards by ids.tmdb; playedKey("s:<id>") -> "t:<id>", which matches
+          // the series card (its ids.tmdb). Best-effort, success-path only.
+          try { standard().notePlayed("s:" + id); } catch (_) { /* recent row is best-effort */ }
+          return stream;
+        }
       }
     }
     throw kino.error("not_found", "chapter not found", { userMessage: "Este capítulo no está disponible." });

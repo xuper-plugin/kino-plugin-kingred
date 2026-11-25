@@ -1246,11 +1246,9 @@ async function resolve(ref) {
       throw kino.error("not_found", "no stream file", { userMessage: "Este título no está disponible." });
     }
     const stream = await playFromSources(parseMovie(doc));
-    if (/^m:\d+$/.test(raw)) {
-      try {
-        standard().notePlayed(raw);
-      } catch (_) {
-      }
+    try {
+      standard().notePlayed(raw);
+    } catch (_) {
     }
     return stream;
   }
@@ -1266,7 +1264,14 @@ async function resolve(ref) {
     const { seasons } = parseSeries(doc);
     for (const chapters of seasons.values()) {
       for (const c of chapters) {
-        if (c.season === Number(s) && c.episode === Number(e)) return playFromSources(c.sources);
+        if (c.season === Number(s) && c.episode === Number(e)) {
+          const stream = await playFromSources(c.sources);
+          try {
+            standard().notePlayed("s:" + id);
+          } catch (_) {
+          }
+          return stream;
+        }
       }
     }
     throw kino.error("not_found", "chapter not found", { userMessage: "Este capítulo no está disponible." });
