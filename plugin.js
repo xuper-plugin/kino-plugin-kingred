@@ -1153,8 +1153,18 @@ async function episodes(ref) {
   return { episodes: list, series: { ids: { tmdb: Number(tmdbId) } } };
 }
 var INLINE_SERVERS = ["vidara", "ok.ru"];
-var LANG_RANK = { Latino: 0, Castellano: 1, Subtitulado: 2, Otro: 3 };
 var MAX_ALTERNATIVES = 8;
+function preferredLang() {
+  let v = "lat";
+  try {
+    v = String(kino.config.get("audio") || "lat");
+  } catch (_) {
+  }
+  return (
+    /** @type {any} */
+    { lat: "Latino", cast: "Castellano", sub: "Subtitulado" }[v] || "Latino"
+  );
+}
 function hostOf(url) {
   const m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(String(url || ""));
   return m ? m[1].toLowerCase() : "";
@@ -1172,9 +1182,15 @@ function labelOf(lang, serverHint) {
 async function playFromSources(sources) {
   const noSources = () => kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
   if (!Array.isArray(sources) || !sources.length) throw noSources();
+  const pref = preferredLang();
+  const order = [pref, ...["Latino", "Castellano", "Subtitulado", "Otro"].filter((l) => l !== pref)];
+  const langRankOf = (lang) => {
+    const i = order.indexOf(lang);
+    return i < 0 ? order.length : i;
+  };
   const ranked = sources.map((source) => {
     const { url: url2 } = cleanEmbed(source.url);
-    const langRank = LANG_RANK[source.lang] ?? LANG_RANK.Otro;
+    const langRank = langRankOf(source.lang);
     return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url2, tier: tierOf(url2, source.serverHint), langRank };
   });
   ranked.sort((a, b) => a.tier - b.tier || a.langRank - b.langRank);

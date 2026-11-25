@@ -126,10 +126,20 @@ export async function episodes(ref) {
 // needs_browser -> a ~20 s WebView capture that usually fails for its big files. It falls to the slow tier so the
 // known-good inline copies (vidara/ok.ru) are tried first; a Yandex extractor (gated Plan B) would restore tier 0.
 const INLINE_SERVERS = ["vidara", "ok.ru"];
-/** Within a speed tier, play the person's preferred language first: Latino > Castellano > Subtitulado > Otro. */
-const LANG_RANK = { Latino: 0, Castellano: 1, Subtitulado: 2, Otro: 3 };
 /** At most this many lazy copies ride along in a Stream's `alternatives` (the KinoStream limit). */
 const MAX_ALTERNATIVES = 8;
+
+/**
+ * The person's preferred audio from Ajustes ▸ KingRed ("Idioma preferido"), as a full language name. Reads
+ * the `audio` setting (lat|cast|sub); a missing/unreadable store or an unknown value falls back to "Latino"
+ * -- so the default, and anything unexpected, keeps today's Latino-first within-tier tie-break.
+ * @returns {"Latino"|"Castellano"|"Subtitulado"}
+ */
+function preferredLang() {
+  let v = "lat";
+  try { v = String(kino.config.get("audio") || "lat"); } catch (_) { /* no store: keep the default */ }
+  return /** @type {any} */ ({ lat: "Latino", cast: "Castellano", sub: "Subtitulado" }[v] || "Latino");
+}
 
 /** The host of an absolute url (lowercased), or "" when it has none -- for inline-host matching. */
 function hostOf(url) {
@@ -169,14 +179,21 @@ async function playFromSources(sources) {
     kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
   if (!Array.isArray(sources) || !sources.length) throw noSources();
 
+  // The within-tier tie-break is preference-driven: the person's "Idioma preferido" sits at rank 0, the
+  // rest keep a stable order after it. Built once per call; by default (or an unknown value) the preferred
+  // language is Latino, so Latino stays primary -- today's behavior.
+  const pref = preferredLang();
+  const order = [pref, ...["Latino", "Castellano", "Subtitulado", "Otro"].filter((l) => l !== pref)];
+  const langRankOf = (lang) => { const i = order.indexOf(lang); return i < 0 ? order.length : i; };
+
   // Clean each embed once (idempotent on an already-clean url) and tag it with its tier and language rank,
   // then sort ascending by (tier, langRank, original order). Array.prototype.sort is stable, so equal
   // (tier, langRank) copies keep their original (file) order. The language rank is the within-tier
-  // tie-break: when two copies play equally fast, the preferred language (Latino) plays as primary --
-  // without it, a series whose Castellano copy sits in a faster tier would always beat its Latino copy.
+  // tie-break: when two copies play equally fast, the preferred language plays as primary -- without it, a
+  // series whose non-preferred copy sits in a faster tier would always beat the preferred one.
   const ranked = sources.map((source) => {
     const { url } = cleanEmbed(source.url);
-    const langRank = LANG_RANK[source.lang] ?? LANG_RANK.Otro;
+    const langRank = langRankOf(source.lang);
     return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url, tier: tierOf(url, source.serverHint), langRank };
   });
   ranked.sort((a, b) => a.tier - b.tier || a.langRank - b.langRank);

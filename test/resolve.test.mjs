@@ -50,7 +50,7 @@ function response(status, body) {
  * the id in the encoded Storage URL; a `plugins.call` door (`resolve` by url, `normalizeHost` the install
  * probe); a `browser.capture` mock; and a `kino.error` carrying code + userMessage.
  */
-function installKino({ docs = {}, door = {}, capture = {}, probe = "ok" } = {}) {
+function installKino({ docs = {}, door = {}, capture = {}, probe = "ok", audio = undefined } = {}) {
   const store = new Map();
   const calls = { resolve: [], capture: [] };
   globalThis.kino = {
@@ -60,6 +60,9 @@ function installKino({ docs = {}, door = {}, capture = {}, probe = "ok" } = {}) 
       remove: (k) => { store.delete(k); },
       keys: () => [...store.keys()],
     },
+    // The settings store resolve() reads for the preferred language ("audio": lat|cast|sub). Default
+    // undefined so untouched cases behave as before (preferredLang() falls back to Latino-first).
+    config: { get: (k) => (k === "audio" ? audio : undefined) },
     log() {},
     error(code, message, options) {
       const err = new Error(message || code);
@@ -238,6 +241,44 @@ test("(h) series within a tier: Latino sorts before Castellano, so Latino plays 
   const lastLatino = labels.map((l) => l.startsWith("Latino")).lastIndexOf(true);
   const firstCastellano = labels.findIndex((l) => l.startsWith("Castellano"));
   assert.ok(firstCastellano > lastLatino, "every Latino copy ranks before the first Castellano one");
+});
+
+test("(j) with the preferred language set to Castellano, the Castellano copy plays as primary within a tier", async () => {
+  // Same chapter as (h) -- all four sources share the slow tier, so the language rank is the tie-break.
+  // With "audio" = "cast" the dynamic rank puts Castellano at 0, so it beats both Latino copies.
+  installKino({
+    audio: "cast",
+    docs: { "1396": SERIES_DOC },
+    door: {
+      [EPISODE_LATINO]: { streams: [{ url: "https://cdn/l-wish.m3u8" }] },
+      "https://filelions.top/embed/32aryo4qs9py": { streams: [{ url: "https://cdn/l-lion.m3u8" }] },
+      [EPISODE_CASTELLANO]: { streams: [{ url: "https://cdn/cast.m3u8" }] },
+      "https://vidara.to/e/ltnavZTZ8WCZv": { streams: [{ url: "https://cdn/sub.m3u8" }] },
+    },
+  });
+
+  const stream = await resolve("t:1396:1:1");
+
+  assert.ok(stream.label.startsWith("Castellano"), "the preferred (Castellano) copy plays as primary");
+  assert.equal(stream.url, "https://cdn/cast.m3u8", "and it is the resolved Castellano stream");
+});
+
+test("(k) an absent/invalid preferred language keeps Latino primary (default unchanged)", async () => {
+  // "audio" = "xx" is not one of lat|cast|sub, so preferredLang() falls back to Latino -- today's behavior.
+  installKino({
+    audio: "xx",
+    docs: { "1396": SERIES_DOC },
+    door: {
+      [EPISODE_LATINO]: { streams: [{ url: "https://cdn/l-wish.m3u8" }] },
+      "https://filelions.top/embed/32aryo4qs9py": { streams: [{ url: "https://cdn/l-lion.m3u8" }] },
+      [EPISODE_CASTELLANO]: { streams: [{ url: "https://cdn/cast.m3u8" }] },
+      "https://vidara.to/e/ltnavZTZ8WCZv": { streams: [{ url: "https://cdn/sub.m3u8" }] },
+    },
+  });
+
+  const stream = await resolve("t:1396:1:1");
+
+  assert.ok(stream.label.startsWith("Latino"), "an unknown preference leaves Latino as primary");
 });
 
 test("(i) a storage fetch that throws surfaces a readable not_found, never a raw error", async () => {
