@@ -17,17 +17,20 @@ import { gateView, readyView, RESOLVER_REPO } from "./gate.js";
 // FIRST page for a `sort` or `category`: there is no browse pagination (the plugin does not declare
 // the `browse` capability), so a row carries no `ref` and shows no "Ver más". The `id` is a stable
 // slug (it keys the row for Kino); `query` is the src/api.js catalogPage argument.
+// The genre-rows (Acción/Comedia/Terror/Anime/Doramas) carry a `genre` from Kino's closed vocabulary so Kino
+// groups them under Categorías; the movie-genre rows are all "peliculas", Anime is "anime", Doramas are "series".
+// The plain populares/recientes/rating rows are not genres and carry none (Kino guesses from their title).
 const HOME_ROWS = [
   { id: "movies-popular", title: "Películas populares", query: { kind: "movies", sort: "popular" } },
   { id: "movies-recent", title: "Estrenos", query: { kind: "movies", sort: "recent" } },
   { id: "movies-rating", title: "Mejor valoradas", query: { kind: "movies", sort: "rating" } },
-  { id: "movies-accion", title: "Acción", query: { kind: "movies", category: "accion" } },
-  { id: "movies-comedia", title: "Comedia", query: { kind: "movies", category: "comedia" } },
-  { id: "movies-terror", title: "Terror", query: { kind: "movies", category: "terror" } },
+  { id: "movies-accion", title: "Acción", genre: "peliculas", query: { kind: "movies", category: "accion" } },
+  { id: "movies-comedia", title: "Comedia", genre: "peliculas", query: { kind: "movies", category: "comedia" } },
+  { id: "movies-terror", title: "Terror", genre: "peliculas", query: { kind: "movies", category: "terror" } },
   { id: "series-popular", title: "Series populares", query: { kind: "series", sort: "popular" } },
   { id: "series-recent", title: "Series recientes", query: { kind: "series", sort: "recent" } },
-  { id: "series-anime", title: "Anime", query: { kind: "series", category: "anime" } },
-  { id: "series-doramas", title: "Doramas", query: { kind: "series", category: "doramas" } },
+  { id: "series-anime", title: "Anime", genre: "anime", query: { kind: "series", category: "anime" } },
+  { id: "series-doramas", title: "Doramas", genre: "series", query: { kind: "series", category: "doramas" } },
 ];
 
 /**
@@ -38,11 +41,11 @@ const HOME_ROWS = [
  */
 export async function home() {
   const rows = await Promise.all(
-    HOME_ROWS.map(async ({ id, title, query }) => {
+    HOME_ROWS.map(async ({ id, title, genre, query }) => {
       try {
         const { items } = await catalogPage(/** @type {any} */ (query));
         if (!items.length) return null;
-        return { id, title, items };
+        return genre ? { id, title, genre, items } : { id, title, items };
       } catch {
         return null;
       }
@@ -117,7 +120,12 @@ export async function episodes(ref) {
 
 // Hosts/servers that play straight away (the resolver reads them inline, no 20 s gate): they rank first so the
 // person waits as little as possible. Everything else (streamwish, filelions, an unknown host) is a slow gate.
-const INLINE_SERVERS = ["vidara", "ok.ru", "disk.yandex"];
+// disk.yandex is deliberately NOT here: the resolver has no Yandex extractor yet, so a Yandex embed comes back
+// needs_browser -> a ~20 s WebView capture that usually fails for its big files. It falls to the slow tier so the
+// known-good inline copies (vidara/ok.ru) are tried first; a Yandex extractor (gated Plan B) would restore tier 0.
+const INLINE_SERVERS = ["vidara", "ok.ru"];
+/** Within a speed tier, play the person's preferred language first: Latino > Castellano > Subtitulado > Otro. */
+const LANG_RANK = { Latino: 0, Castellano: 1, Subtitulado: 2, Otro: 3 };
 /** At most this many lazy copies ride along in a Stream's `alternatives` (the KinoStream limit). */
 const MAX_ALTERNATIVES = 8;
 
@@ -134,7 +142,9 @@ function hostOf(url) {
 function tierOf(cleanUrl, serverHint) {
   const hint = String(serverHint || "").toLowerCase();
   const host = hostOf(cleanUrl);
-  if (INLINE_SERVERS.some((name) => hint === name || host.includes(name))) return 0;
+  // Match the host exactly or as a dotted suffix (ok.ru, foo.ok.ru), never as a bare substring: a
+  // plain `host.includes("ok.ru")` would mis-tier an unrelated host like "look.rush.com" to inline.
+  if (INLINE_SERVERS.some((name) => hint === name || host === name || host.endsWith("." + name))) return 0;
   if (/\.(mp4|m3u8|mkv|webm)(\?|#|$)/i.test(cleanUrl)) return 0;
   return 2;
 }
@@ -157,13 +167,17 @@ async function playFromSources(sources) {
     kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
   if (!Array.isArray(sources) || !sources.length) throw noSources();
 
-  // Clean each embed once (idempotent on an already-clean url) and tag it with its tier, then stable-sort
-  // ascending by tier: Array.prototype.sort keeps equal-tier copies in their original (file) order.
+  // Clean each embed once (idempotent on an already-clean url) and tag it with its tier and language rank,
+  // then sort ascending by (tier, langRank, original order). Array.prototype.sort is stable, so equal
+  // (tier, langRank) copies keep their original (file) order. The language rank is the within-tier
+  // tie-break: when two copies play equally fast, the preferred language (Latino) plays as primary --
+  // without it, a series whose Castellano copy sits in a faster tier would always beat its Latino copy.
   const ranked = sources.map((source) => {
     const { url } = cleanEmbed(source.url);
-    return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url, tier: tierOf(url, source.serverHint) };
+    const langRank = LANG_RANK[source.lang] ?? LANG_RANK.Otro;
+    return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url, tier: tierOf(url, source.serverHint), langRank };
   });
-  ranked.sort((a, b) => a.tier - b.tier);
+  ranked.sort((a, b) => a.tier - b.tier || a.langRank - b.langRank);
 
   // Resolve in ranked order; the first non-null wins. Copies tried-and-failed before it are dropped.
   let primaryIndex = -1;
@@ -226,13 +240,27 @@ export async function resolve(ref) {
 
   if (raw.startsWith("m:")) {
     const id = raw.slice(2);
-    return playFromSources(parseMovie(await storageJson("SourcesM/" + id + ".json")));
+    let doc;
+    try {
+      doc = await storageJson("SourcesM/" + id + ".json");
+    } catch {
+      // A catalog title with no SourcesM/<id>.json (a 404, say) must not leak storageJson's plain Error:
+      // wrap it in a readable not_found, the way episodes() already swallows a missing document.
+      throw kino.error("not_found", "no stream file", { userMessage: "Este título no está disponible." });
+    }
+    return playFromSources(parseMovie(doc));
   }
 
   const chapter = /^t:(\d+):(\d+):(\d+)$/.exec(raw);
   if (chapter) {
     const [, id, s, e] = chapter;
-    const { seasons } = parseSeries(await storageJson("SourcesT/" + id + ".json"));
+    let doc;
+    try {
+      doc = await storageJson("SourcesT/" + id + ".json");
+    } catch {
+      throw kino.error("not_found", "no stream file", { userMessage: "Este capítulo no está disponible." });
+    }
+    const { seasons } = parseSeries(doc);
     for (const chapters of seasons.values()) {
       for (const c of chapters) {
         if (c.season === Number(s) && c.episode === Number(e)) return playFromSources(c.sources);

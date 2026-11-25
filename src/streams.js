@@ -92,6 +92,9 @@ export function parseSeries(json) {
   for (const t of temporadas) {
     const season = Number(t.temporada);
     const episode = Number(t.capitulo);
+    // Skip a malformed entry whose temporada/capitulo are not finite numbers: a NaN season/episode would
+    // produce NaN-shaped refs and sort unstably (NaN compares false to everything) further downstream.
+    if (!Number.isFinite(season) || !Number.isFinite(episode)) continue;
     /** @type {Chapter} */
     const chapter = { season, episode, sources: toSources(t.sources) };
     const list = seasons.get(season);

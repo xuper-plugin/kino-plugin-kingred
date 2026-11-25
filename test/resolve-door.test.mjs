@@ -10,6 +10,11 @@ import { resolveViaHelper, resolverInstalled } from "../src/resolve-door.js";
 
 const HLS_MIME = "application/vnd.apple.mpegurl";
 
+// The resolver-door calls this consumer declares (resolve + the install probe normalizeHost). The mocked door
+// models the real protocol with them: Kino checks the DECLARED call list BEFORE provider existence, so a call
+// outside this set throws not_declared, and only a declared call reaches the provider (and its answers/errors).
+const DECLARED_CALLS = new Set(["resolve", "normalizeHost"]);
+
 // A kino whose door (`plugins.call`) and hidden WebView (`browser.capture`) are both programmable.
 // `door` maps an embed url to the resolver's answer; `capture` maps an embed url to a capture result.
 function doorKino({ door = {}, capture = {} } = {}) {
@@ -19,15 +24,11 @@ function doorKino({ door = {}, capture = {} } = {}) {
       log() {},
       plugins: {
         call: async (alias, name, arg) => {
-          if (name === "normalizeHost") {
-            calls.door.push({ name, arg });
-            const answer = door[arg.url];
-            if (answer instanceof Error) throw answer;
-            return answer || { host: "" };
-          }
+          if (!DECLARED_CALLS.has(name)) throw Object.assign(new Error("not_declared"), { code: "not_declared" });
           calls.door.push({ name, arg });
           const answer = door[arg.url];
           if (answer instanceof Error) throw answer;
+          if (name === "normalizeHost") return answer || { host: "" };
           return answer || { streams: [], error: "needs_browser" };
         },
       },
@@ -85,8 +86,20 @@ test("needs_browser does not capture when allowCapture is false", async () => {
   assert.deepEqual(calls.capture, []);
 });
 
-test("resolverInstalled is false only when the door is provider_missing", async () => {
+test("the door throws not_declared for a call the manifest does not declare (protocol order)", async () => {
+  // This is the regression the install gate depends on: Kino rejects an UNDECLARED call with not_declared
+  // before it ever looks for the provider. So the install probe (normalizeHost) HAS to be a declared call --
+  // otherwise its absent-resolver error would be not_declared, which resolverInstalled() reads as "installed".
+  const { kino } = doorKino();
+  await assert.rejects(
+    () => kino.plugins.call("resolver", "rank", { url: "https://x.example/" }),
+    (err) => { assert.equal(err.code, "not_declared"); return true; },
+  );
+});
+
+test("resolverInstalled is false only when the declared probe yields provider_missing", async () => {
   const probe = "https://probe.invalid/";
+  // The probe (normalizeHost) is a declared call, so an absent resolver surfaces as provider_missing -> false.
   const missing = doorKino({ door: { [probe]: Object.assign(new Error("missing"), { code: "provider_missing" }) } });
   assert.equal(await resolverInstalled(missing.kino), false);
 

@@ -124,3 +124,24 @@ test("parseSeries groups chapters under their season number and parses each chap
   // Keys are numbers, not the raw "1"/"2" strings.
   for (const key of seasons.keys()) assert.equal(typeof key, "number");
 });
+
+test("parseSeries skips a malformed chapter whose temporada/capitulo are not finite numbers", () => {
+  const { seasons } = parseSeries({
+    temporadas: [
+      { temporada: "1", capitulo: "1", sources: [{ idioma: "Latino", url: "https://ok.ru/v/1" }] },
+      { temporada: "x", capitulo: "1", sources: [{ idioma: "Latino", url: "https://ok.ru/v/bad-season" }] },
+      { temporada: "1", capitulo: "pilot", sources: [{ idioma: "Latino", url: "https://ok.ru/v/bad-ep" }] },
+      { temporada: "2", capitulo: "3", sources: [{ idioma: "Latino", url: "https://ok.ru/v/2" }] },
+    ],
+  });
+
+  // Only the two well-formed chapters survive; no NaN key is ever created.
+  assert.deepEqual([...seasons.keys()], [1, 2]);
+  for (const key of seasons.keys()) assert.ok(Number.isFinite(key), `season key ${key} is finite`);
+  assert.equal(seasons.get(1).length, 1, "the malformed capitulo entry under season 1 is dropped");
+  for (const chapters of seasons.values()) {
+    for (const c of chapters) {
+      assert.ok(Number.isFinite(c.season) && Number.isFinite(c.episode), "every surviving chapter has finite numbers");
+    }
+  }
+});

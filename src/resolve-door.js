@@ -74,7 +74,12 @@ export async function resolveViaHelper(embedUrl, kino, referer, allowCapture = t
   };
 }
 
-/** True when the kino-resolver provider is installed and reachable (a cheap door probe; only provider_missing means "not installed"). */
+/**
+ * True when the kino-resolver provider is installed and reachable: a cheap door probe where only `provider_missing`
+ * means "not installed". The probe call (`normalizeHost`) MUST be in this plugin's declared `consumes.resolver.calls`:
+ * Kino checks the declared call list before provider existence, so an undeclared probe would throw `not_declared`
+ * (never `provider_missing`) and this would wrongly report the resolver installed, so the install gate could never fire.
+ */
 export async function resolverInstalled(kino) {
   try {
     await kino.plugins.call(RESOLVER_ALIAS, "normalizeHost", { url: "https://probe.invalid/" });

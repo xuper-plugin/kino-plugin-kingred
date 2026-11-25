@@ -25,13 +25,17 @@ test("capabilities are exactly episodes, home, resolve, screen, search", () => {
   assert.equal(manifest.streamHosts, "any");
 });
 
-test("consumes the resolver door, resolve only (no rank)", () => {
+test("consumes the resolver door: resolve + normalizeHost, and no rank", () => {
   const r = manifest.consumes?.resolver;
   assert.ok(r, "consumes.resolver missing");
   assert.equal(r.repo, "xuper-plugin/kino-plugin-kino-resolver");
   assert.equal(r.door, "resolver");
   assert.ok(Array.isArray(r.calls));
   assert.ok(r.calls.includes("resolve"), "resolver must be called for resolve");
+  // The install-gate probe (resolverInstalled) calls normalizeHost on the door; Kino checks the
+  // DECLARED call list before provider existence, so an undeclared probe would throw not_declared
+  // (never provider_missing) and the gate could never fire. It must be declared for per-door consent.
+  assert.ok(r.calls.includes("normalizeHost"), "the install probe calls normalizeHost: it must be declared");
   assert.ok(!r.calls.includes("rank"), '"rank" is not a real door call');
 });
 

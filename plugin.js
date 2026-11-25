@@ -126,6 +126,7 @@ function parseSeries(json) {
   for (const t of temporadas) {
     const season = Number(t.temporada);
     const episode = Number(t.capitulo);
+    if (!Number.isFinite(season) || !Number.isFinite(episode)) continue;
     const chapter = { season, episode, sources: toSources(t.sources) };
     const list = seasons.get(season);
     if (list) list.push(chapter);
@@ -264,24 +265,24 @@ var HOME_ROWS = [
   { id: "movies-popular", title: "Películas populares", query: { kind: "movies", sort: "popular" } },
   { id: "movies-recent", title: "Estrenos", query: { kind: "movies", sort: "recent" } },
   { id: "movies-rating", title: "Mejor valoradas", query: { kind: "movies", sort: "rating" } },
-  { id: "movies-accion", title: "Acción", query: { kind: "movies", category: "accion" } },
-  { id: "movies-comedia", title: "Comedia", query: { kind: "movies", category: "comedia" } },
-  { id: "movies-terror", title: "Terror", query: { kind: "movies", category: "terror" } },
+  { id: "movies-accion", title: "Acción", genre: "peliculas", query: { kind: "movies", category: "accion" } },
+  { id: "movies-comedia", title: "Comedia", genre: "peliculas", query: { kind: "movies", category: "comedia" } },
+  { id: "movies-terror", title: "Terror", genre: "peliculas", query: { kind: "movies", category: "terror" } },
   { id: "series-popular", title: "Series populares", query: { kind: "series", sort: "popular" } },
   { id: "series-recent", title: "Series recientes", query: { kind: "series", sort: "recent" } },
-  { id: "series-anime", title: "Anime", query: { kind: "series", category: "anime" } },
-  { id: "series-doramas", title: "Doramas", query: { kind: "series", category: "doramas" } }
+  { id: "series-anime", title: "Anime", genre: "anime", query: { kind: "series", category: "anime" } },
+  { id: "series-doramas", title: "Doramas", genre: "series", query: { kind: "series", category: "doramas" } }
 ];
 async function home() {
   const rows = await Promise.all(
-    HOME_ROWS.map(async ({ id, title, query }) => {
+    HOME_ROWS.map(async ({ id, title, genre, query }) => {
       try {
         const { items } = await catalogPage(
           /** @type {any} */
           query
         );
         if (!items.length) return null;
-        return { id, title, items };
+        return genre ? { id, title, genre, items } : { id, title, items };
       } catch {
         return null;
       }
@@ -332,7 +333,8 @@ async function episodes(ref) {
   list.sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || a.number - b.number);
   return { episodes: list, series: { ids: { tmdb: Number(tmdbId) } } };
 }
-var INLINE_SERVERS = ["vidara", "ok.ru", "disk.yandex"];
+var INLINE_SERVERS = ["vidara", "ok.ru"];
+var LANG_RANK = { Latino: 0, Castellano: 1, Subtitulado: 2, Otro: 3 };
 var MAX_ALTERNATIVES = 8;
 function hostOf(url) {
   const m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(String(url || ""));
@@ -341,7 +343,7 @@ function hostOf(url) {
 function tierOf(cleanUrl, serverHint) {
   const hint = String(serverHint || "").toLowerCase();
   const host = hostOf(cleanUrl);
-  if (INLINE_SERVERS.some((name) => hint === name || host.includes(name))) return 0;
+  if (INLINE_SERVERS.some((name) => hint === name || host === name || host.endsWith("." + name))) return 0;
   if (/\.(mp4|m3u8|mkv|webm)(\?|#|$)/i.test(cleanUrl)) return 0;
   return 2;
 }
@@ -353,9 +355,10 @@ async function playFromSources(sources) {
   if (!Array.isArray(sources) || !sources.length) throw noSources();
   const ranked = sources.map((source) => {
     const { url: url2 } = cleanEmbed(source.url);
-    return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url2, tier: tierOf(url2, source.serverHint) };
+    const langRank = LANG_RANK[source.lang] ?? LANG_RANK.Otro;
+    return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url2, tier: tierOf(url2, source.serverHint), langRank };
   });
-  ranked.sort((a, b) => a.tier - b.tier);
+  ranked.sort((a, b) => a.tier - b.tier || a.langRank - b.langRank);
   let primaryIndex = -1;
   let stream = null;
   for (let i = 0; i < ranked.length; i += 1) {
@@ -401,12 +404,24 @@ async function resolve(ref) {
   }
   if (raw.startsWith("m:")) {
     const id = raw.slice(2);
-    return playFromSources(parseMovie(await storageJson("SourcesM/" + id + ".json")));
+    let doc;
+    try {
+      doc = await storageJson("SourcesM/" + id + ".json");
+    } catch {
+      throw kino.error("not_found", "no stream file", { userMessage: "Este título no está disponible." });
+    }
+    return playFromSources(parseMovie(doc));
   }
   const chapter = /^t:(\d+):(\d+):(\d+)$/.exec(raw);
   if (chapter) {
     const [, id, s, e] = chapter;
-    const { seasons } = parseSeries(await storageJson("SourcesT/" + id + ".json"));
+    let doc;
+    try {
+      doc = await storageJson("SourcesT/" + id + ".json");
+    } catch {
+      throw kino.error("not_found", "no stream file", { userMessage: "Este capítulo no está disponible." });
+    }
+    const { seasons } = parseSeries(doc);
     for (const chapters of seasons.values()) {
       for (const c of chapters) {
         if (c.season === Number(s) && c.episode === Number(e)) return playFromSources(c.sources);
