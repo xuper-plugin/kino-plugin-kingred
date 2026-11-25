@@ -210,6 +210,55 @@ async function resolverInstalled(kino2) {
   }
 }
 
+// src/gate.js
+var RESOLVER_REPO = "xuper-plugin/kino-plugin-kino-resolver";
+function gateView() {
+  return {
+    type: "Scaffold",
+    appBar: { type: "AppBar", title: { type: "Text", text: "KingRed" } },
+    body: {
+      type: "Column",
+      key: "gate",
+      mainAxisAlignment: "center",
+      crossAxisAlignment: "center",
+      padding: 24,
+      gap: 16,
+      children: [
+        { type: "Text", key: "gateTitle", style: "h3", text: "Falta el motor de reproducción" },
+        {
+          type: "Text",
+          key: "gateText",
+          style: "p",
+          text: "KingRed usa Kino Resolver para abrir los enlaces. Instálalo para reproducir."
+        },
+        {
+          type: "ElevatedButton",
+          key: "installResolver",
+          labelText: "Instalar Kino Resolver",
+          onPressed: { go: { installPlugin: { repo: RESOLVER_REPO } } }
+        }
+      ]
+    }
+  };
+}
+function readyView() {
+  return {
+    type: "Scaffold",
+    appBar: { type: "AppBar", title: { type: "Text", text: "KingRed" } },
+    body: {
+      type: "Column",
+      key: "ready",
+      mainAxisAlignment: "center",
+      crossAxisAlignment: "center",
+      padding: 24,
+      gap: 16,
+      children: [
+        { type: "Text", key: "ready", style: "p", text: "Todo listo. Busca o explora KingRed desde Inicio." }
+      ]
+    }
+  };
+}
+
 // src/plugin.js
 var HOME_ROWS = [
   { id: "movies-popular", title: "Películas populares", query: { kind: "movies", sort: "popular" } },
@@ -367,11 +416,12 @@ async function resolve(ref) {
   }
   throw kino.error("not_found", "unknown ref", { userMessage: "No se encontró este título." });
 }
-async function screen() {
-  return { title: "KingRed", rows: [] };
+async function screen(ctx) {
+  const installed = ctx && ctx.installed && ctx.installed[RESOLVER_REPO];
+  return installed ? readyView() : gateView();
 }
 async function screenEvent() {
-  return {};
+  return null;
 }
 export {
   episodes,

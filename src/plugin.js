@@ -11,6 +11,7 @@ import { catalogPage } from "./api.js";
 import { storageJson } from "./firebase.js";
 import { parseMovie, parseSeries, cleanEmbed } from "./streams.js";
 import { resolveViaHelper, resolverInstalled } from "./resolve-door.js";
+import { gateView, readyView, RESOLVER_REPO } from "./gate.js";
 
 // The Home rows, in the order Kino shows them (movies first, then series). Each row is the catalog's
 // FIRST page for a `sort` or `category`: there is no browse pagination (the plugin does not declare
@@ -243,12 +244,18 @@ export async function resolve(ref) {
   throw kino.error("not_found", "unknown ref", { userMessage: "No se encontró este título." });
 }
 
-/** The plugin's canvas: the resolver install gate once the real screen lands. */
-export async function screen() {
-  return { title: "KingRed", rows: [] };
+/**
+ * The plugin's canvas: the resolver install gate while the recommended resolver is missing, the plain
+ * "all set" screen once it is installed. Kino reports the resolver's state in `ctx.installed[<repo>]`
+ * (and calls screen() again whenever it changes), so a missing entry is treated as not installed.
+ * @param {{ installed?: Record<string, boolean> }} [ctx]
+ */
+export async function screen(ctx) {
+  const installed = ctx && ctx.installed && ctx.installed[RESOLVER_REPO];
+  return installed ? readyView() : gateView();
 }
 
-/** Events from the screen (button presses, tab changes). */
+/** Events from the screen: the install button's `go` is handled by Kino itself, so there is nothing to do. */
 export async function screenEvent() {
-  return {};
+  return null;
 }
