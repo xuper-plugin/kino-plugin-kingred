@@ -2,6 +2,18 @@
 
 // src/api.js
 var CATALOG_BASE = "https://st.kinghydra.site/api/catalog";
+var SORTS = ["popular", "year", "recent", "alpha", "manual", "added", "rating", "date"];
+var CATEGORIES = [
+  "accion",
+  "anime",
+  "comedia",
+  "cristianas",
+  "documentales",
+  "doramas",
+  "drama",
+  "infantiles",
+  "terror"
+];
 var KIND = {
   movies: { tag: "m", kind: "movie" },
   series: { tag: "t", kind: "series" }
@@ -21,6 +33,8 @@ function toItem(entry, { tag, kind }) {
   if (entry.poster_url) item.poster = entry.poster_url;
   if (entry.backdrop_url) item.backdrop = entry.backdrop_url;
   if (entry.overview) item.overview = entry.overview;
+  const tmdb = Number(entry.tmdb_id);
+  if (Number.isInteger(tmdb) && tmdb > 0) item.ids = { tmdb };
   return item;
 }
 async function catalogPage({ kind, page = 1, category, sort, q }) {
@@ -123,11 +137,11 @@ function parseMovie(json) {
 function parseSeries(json) {
   const seasons = /* @__PURE__ */ new Map();
   const temporadas = json && Array.isArray(json.temporadas) ? json.temporadas : [];
-  for (const t of temporadas) {
-    const season = Number(t.temporada);
-    const episode = Number(t.capitulo);
+  for (const t2 of temporadas) {
+    const season = Number(t2.temporada);
+    const episode = Number(t2.capitulo);
     if (!Number.isFinite(season) || !Number.isFinite(episode)) continue;
-    const chapter = { season, episode, sources: toSources(t.sources) };
+    const chapter = { season, episode, sources: toSources(t2.sources) };
     const list = seasons.get(season);
     if (list) list.push(chapter);
     else seasons.set(season, [chapter]);
@@ -351,7 +365,7 @@ var tabBar = (tabs, active) => ({
   divider: false,
   value: active,
   onChanged: "tab",
-  tabs: tabs.map((t) => ({ value: t.id, label: t.label, labelEn: t.labelEn || t.label }))
+  tabs: tabs.map((t2) => ({ value: t2.id, label: t2.label, labelEn: t2.labelEn || t2.label }))
 });
 var iconButton = (key, icon, word, onPressed) => ({ type: "IconButton", key, icon, ...twin(word, "labelText"), ...twin(word, "tooltip"), onPressed });
 var searchOpenOps = (tabsInBar) => [
@@ -424,7 +438,7 @@ var rail = (r, key, words, headers) => ({
 function browseView(cfg, { tab, data, recent, pending, failed, searching = false, device = "phone", own = null, ownActions = [] }) {
   const tv = device === "tv";
   const tabs = own ? [cfg.tabs[0]] : cfg.tabs;
-  const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
+  const active = tabs.some((t2) => t2.id === tab) ? tab : tabs[0].id;
   const withTabs = tabs.length > 1;
   const body = [];
   const ownBlocks = own && !Array.isArray(own) && Array.isArray(own.blocks) ? own.blocks : null;
@@ -664,7 +678,7 @@ function snapshotRows(text, tab, now = Date.now()) {
 var lastSource = null;
 function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect = "1:1", needsResolver, hasSettings, tabs, loadTab: loadTab2, homeKey = null, titleOf: titleOf2, typeOf, tmdbPictures = false, imageHeaders = null, searchHere = null, page = null, barSearch = true, backArrow = true, snapshot = null }) {
   const cfg = { name, nameEn, logo, logoAspect, imageHeaders, hasSettings: !!hasSettings, barSearch: barSearch !== false, backArrow: backArrow !== false, tabs: Array.isArray(tabs) && tabs.length > 0 ? tabs : DEFAULT_TABS };
-  const TAB_IDS = cfg.tabs.map((t) => t.id);
+  const TAB_IDS = cfg.tabs.map((t2) => t2.id);
   lastSource = { tabs: cfg.tabs, loadTab: loadTab2, titleOf: titleOf2, typeOf };
   async function fromSnapshot(tab) {
     if (typeof snapshot !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(snapshot)) return null;
@@ -760,8 +774,8 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
     }
   }
   const stored = () => {
-    const t = get(TAB_KEY);
-    return TAB_IDS.includes(t) ? t : null;
+    const t2 = get(TAB_KEY);
+    return TAB_IDS.includes(t2) ? t2 : null;
   };
   function dataOf(tab) {
     if (memo.has(tab)) return memo.get(tab).data;
@@ -816,7 +830,7 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
     const st = c.state && typeof c.state === "object" ? c.state : {};
     const tab = TAB_IDS.includes(st.tab) ? st.tab : tabFromArgs(c.route) ?? stored() ?? TAB_IDS[0];
     const data = enrich(dataOf(tab));
-    const loaded = TAB_IDS.map((t) => memo.get(t)).filter(Boolean).map((m) => m.data);
+    const loaded = TAB_IDS.map((t2) => memo.get(t2)).filter(Boolean).map((m) => m.data);
     const pending = Array.isArray(st.pending) && st.pending.length > 0;
     const searching = st.searching === true;
     if (page) {
@@ -880,7 +894,7 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
     },
     openTabs({ route, state, device }) {
       const tab = tabFromArgs(route) ?? (TAB_IDS.includes(state.tab) ? state.tab : stored() ?? TAB_IDS[0]);
-      for (const t of TAB_IDS) dataOf(t);
+      for (const t2 of TAB_IDS) dataOf(t2);
       return { state: { tab, pending: needed(tab), failed: null } };
     },
     tab({ value, arg, state }) {
@@ -890,12 +904,12 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
       dataOf(tab);
       const failed = { ...state.failed || {} };
       delete failed[tab];
-      const pending = [tab, ...Array.isArray(state.pending) ? state.pending.filter((t) => t !== tab) : []];
+      const pending = [tab, ...Array.isArray(state.pending) ? state.pending.filter((t2) => t2 !== tab) : []];
       return { state: { tab, pending: memo.get(tab) && memo.get(tab).whole ? pending.slice(1) : pending, failed } };
     },
     retry({ state }) {
       const tab = TAB_IDS.includes(state.tab) ? state.tab : TAB_IDS[0];
-      const queued = Array.isArray(state.pending) ? state.pending.filter((t) => t !== tab) : [];
+      const queued = Array.isArray(state.pending) ? state.pending.filter((t2) => t2 !== tab) : [];
       return { state: { failed: null, pending: [tab, ...queued] } };
     },
     async tick({ state, route }) {
@@ -1004,9 +1018,232 @@ function makeStandardScreen({ kino: kino2, name, nameEn, logo = null, logoAspect
   return { screen: screen2, screenEvent: screenEvent2, notePlayed };
 }
 
+// src/std/catalog.js
+var CATALOG_MAX = 40;
+var CATALOG_EPISODES_MAX = 500;
+var OVERVIEW_MAX2 = 300;
+var HTTPS3 = /^https:\/\//;
+function catalogItems(found) {
+  const out = [];
+  const list = Array.isArray(found) ? found : found && Array.isArray(found.items) ? found.items : [];
+  for (const it of list) {
+    if (out.length >= CATALOG_MAX) break;
+    if (!it || typeof it.id !== "string" || !it.id || typeof it.ref !== "string" || !it.ref || typeof it.title !== "string" || !it.title) continue;
+    const item = { id: it.id, ref: it.ref, title: it.title, kind: typeof it.kind === "string" && it.kind ? it.kind : "movie" };
+    if (typeof it.poster === "string" && HTTPS3.test(it.poster)) item.poster = it.poster;
+    if (typeof it.backdrop === "string" && HTTPS3.test(it.backdrop)) item.backdrop = it.backdrop;
+    if (it.year !== void 0 && it.year !== null && String(it.year)) item.year = String(it.year);
+    if (typeof it.overview === "string" && it.overview.trim()) item.overview = it.overview.trim().slice(0, OVERVIEW_MAX2);
+    const tmdb = it.ids && Number.isInteger(it.ids.tmdb) ? it.ids.tmdb : Number.isInteger(it.tmdb) ? it.tmdb : 0;
+    if (tmdb > 0) item.tmdb = tmdb;
+    out.push(item);
+  }
+  return out;
+}
+function catalogQuery(arg) {
+  const q = String(arg && arg.q || "").trim().slice(0, 200);
+  const type = arg && (arg.type === "movie" || arg.type === "series") ? arg.type : "any";
+  const tmdbId = arg && Number.isInteger(arg.tmdb) && arg.tmdb > 0 ? arg.tmdb : 0;
+  return { q, type, season: 0, episode: 0, tmdbId, year: 0, originalTitle: "", altTitles: [], cursor: null };
+}
+function catalogDoor(search2) {
+  return async (arg) => {
+    const query = catalogQuery(arg);
+    if (!query.q) return [];
+    return catalogItems(await search2(query));
+  };
+}
+function wholeNumber(v) {
+  if (Number.isInteger(v)) return v;
+  if (typeof v === "string" && /^\s*\d+\s*$/.test(v)) return parseInt(v, 10);
+  return null;
+}
+function catalogEpisodes(list) {
+  const rows = Array.isArray(list) ? list : list && Array.isArray(list.episodes) ? list.episodes : [];
+  const out = [];
+  for (const e of rows) {
+    if (!e) continue;
+    const number = wholeNumber(e.number);
+    if (number === null || number < 1 || typeof e.ref !== "string" || !e.ref) continue;
+    const season = e.season === void 0 || e.season === null ? 1 : wholeNumber(e.season);
+    if (season === null || season < 0) continue;
+    const row = { season, number, ref: e.ref };
+    if (typeof e.title === "string" && e.title) row.title = e.title;
+    out.push(row);
+  }
+  return out.length > CATALOG_EPISODES_MAX ? out.slice(-CATALOG_EPISODES_MAX) : out;
+}
+function catalogEpisodesDoor(episodes2) {
+  return async (arg) => {
+    const ref = arg && typeof arg.ref === "string" ? arg.ref.trim() : "";
+    if (!ref) return [];
+    return catalogEpisodes(await episodes2(ref));
+  };
+}
+
 // src/logo.js
 var LOGO = "data:image/png;base64,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caKlsInm5NZbb6WgoCCqTnlZWRljx47l+++/r/a5Xe7PdqCYxMBxneD169dbPr5Xr15MmzYNn8/XKveblZXF3LlzadPGetCCruvMnDmT1atXV/tcA/6JpqcvDAF/SZDa33ECAPjkk08sj/G7XC6GDh3Ko48+2uI5gpKTk3n22Wfp3LlzVOcVFRWxcOFCQqHqCUkygWttuK9fgNdJHBwngG+//ZYff/zR8vE+n4/x48dzzz33tNxDd7m45557uP3226M6b926dUyZMoXy8rPD0gZhpEBpau3/BnBQBBC/lJaWnuUeNERaWhp33313i8X79+zZkylTpliKWo38v0aPHs0vv/xydkfadH+aymGMmH9EAPFLKBTirbfe4vDhw5b7DV988QWjRo1qkfCI9u3bM2PGDHJyciyf4/f7GTNmDJs2bap1si8VY8eXpvIhsEUEEP9s3ryZpUuXWjL+zz//nBEjRkTlNjUWr9fLAw88wKBBg6IS9IIFC3j77bfP8vvD5NH0xS/HgSKcHfaQMAKorKxk3rx59UZ8hmv++++/n+3bW2ala//+/Rk9erRl10cpxaeffsq0adMIBAJ1vkA7Rn++wlj1hQjAGWzdupUpU6Zw+vTpWg3ryy+/5P7772fr1q0tcj+dOnVi6tSpdOxoPU/D7t27GT16NEeP1p2D2Q73pwIj5v+UCMBZfYFFixYxc+ZM/H5/NeNfv3499913H999912L3IvP5+Oxxx7j2mutD1QeO3aM8ePHN7hqLYempz53UqpDEUCNzmNhYSFPPvlklQg2b95MQUFBixk/wG233cbw4cMtp1UJBAI8//zzvPvuuw0eewNGDFCjKwrgLRJr6NNuNIxlqOFMfH6McBLd/NrqRdM0dfvtt6uVK1eq7t27R31+nz591KlTp5Su6w2WYDCoJk2aVHVu165d1bZt2yydGy6LFi1S6enpDd5XEqhFoPQmlB9AdY+R91RPCdtSAPhn09ZSbej6JMYGGUopli5dyooVKyyFS9tFUlISTz/9NN26dYtqBGvcuHGcOHGiwWPPw9jKtCn8HefH/CesC1STljR+gBEjRjB48GDLYRalpaWMHTuWnTutmeSVNC368xDwJok39JmwAmgxn1DTyM3NZdKkSZZnlysqKpg5cyYff/yxpZVtGsbG103xAVaTeBNfIoAWID09nWeeeYbMzEzL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";
 var LOGO_ASPECT = "1:1";
+
+// src/i18n.js
+var WORDS2 = {
+  es: {
+    rowMoviesPopular: "Películas populares",
+    rowMoviesRecent: "Estrenos",
+    rowMoviesRating: "Mejor valoradas",
+    rowSeriesPopular: "Series populares",
+    rowSeriesRecent: "Series recientes",
+    rowPopular: "Populares",
+    rowRecent: "Recientes",
+    cat_accion: "Acción",
+    cat_anime: "Anime",
+    cat_comedia: "Comedia",
+    cat_cristianas: "Cristianas",
+    cat_documentales: "Documentales",
+    cat_doramas: "Doramas",
+    cat_drama: "Drama",
+    cat_infantiles: "Infantiles",
+    cat_terror: "Terror",
+    tileMoviesAnime: "Películas de anime",
+    tileMoviesDoramas: "Cine asiático",
+    tileSeriesDocumentales: "Series documentales",
+    episode: "Capítulo {n}",
+    noSources: "No hay servidores disponibles para este título.",
+    badRef: "Enlace no válido.",
+    deadServer: "Este servidor no está disponible.",
+    needResolver: "Para reproducir, instala el motor de reproducción (Kino Resolver) que el plugin te pedirá.",
+    titleMissing: "Este título no está disponible.",
+    episodeMissing: "Este capítulo no está disponible.",
+    notFound: "No se encontró este título.",
+    catalogDown: "El catálogo de KingRed no responde ahora. Intenta de nuevo en un rato.",
+    status: "Catálogo de KingRed: películas y series.",
+    done: "Listo",
+    lang_Latino: "Latino",
+    lang_Castellano: "Castellano",
+    lang_Subtitulado: "Subtitulado",
+    lang_Otro: "Otro idioma"
+  },
+  en: {
+    rowMoviesPopular: "Popular movies",
+    rowMoviesRecent: "New releases",
+    rowMoviesRating: "Top rated",
+    rowSeriesPopular: "Popular series",
+    rowSeriesRecent: "Recent series",
+    rowPopular: "Popular",
+    rowRecent: "Recent",
+    cat_accion: "Action",
+    cat_anime: "Anime",
+    cat_comedia: "Comedy",
+    cat_cristianas: "Christian",
+    cat_documentales: "Documentaries",
+    cat_doramas: "K-dramas",
+    cat_drama: "Drama",
+    cat_infantiles: "Kids",
+    cat_terror: "Horror",
+    tileMoviesAnime: "Anime movies",
+    tileMoviesDoramas: "Asian cinema",
+    tileSeriesDocumentales: "Docuseries",
+    episode: "Episode {n}",
+    noSources: "There are no servers available for this title.",
+    badRef: "Invalid link.",
+    deadServer: "This server is not available.",
+    needResolver: "To play, install the playback engine (Kino Resolver) the plugin will ask you for.",
+    titleMissing: "This title is not available.",
+    episodeMissing: "This episode is not available.",
+    notFound: "This title was not found.",
+    catalogDown: "The KingRed catalog is not answering right now. Try again in a while.",
+    status: "KingRed catalog: movies and series.",
+    done: "Done",
+    lang_Latino: "Latin American Spanish",
+    lang_Castellano: "Castilian Spanish",
+    lang_Subtitulado: "Subtitled",
+    lang_Otro: "Other language"
+  }
+};
+function langOf(k = globalThis.kino) {
+  return String(k && k.lang || "").toLowerCase().startsWith("en") ? "en" : "es";
+}
+function tIn(lang, key, vars) {
+  const words = WORDS2[lang === "en" ? "en" : "es"];
+  const s = words[key] ?? WORDS2.es[key] ?? key;
+  return vars ? s.replace(/\{(\w+)\}/g, (m, k) => vars[k] != null ? String(vars[k]) : m) : s;
+}
+function t(key, vars) {
+  return tIn(langOf(), key, vars);
+}
+var KEYS = { es: Object.keys(WORDS2.es), en: Object.keys(WORDS2.en) };
+
+// src/lists.js
+function listRef({ kind, sort = "", category = "" }) {
+  return `kr:${kind}:${sort}:${category}`;
+}
+function parseListRef(ref) {
+  const m = /^kr:(movies|series):([a-z]*):([a-z]*)$/.exec(String(ref || ""));
+  if (!m) return null;
+  const [, kind, sort, category] = m;
+  if (sort && !SORTS.includes(sort)) return null;
+  if (category && !CATEGORIES.includes(category)) return null;
+  const out = { kind: (
+    /** @type {"movies" | "series"} */
+    kind
+  ) };
+  if (sort) out.sort = sort;
+  if (category) out.category = category;
+  return out;
+}
+var MAX_PAGE = 1e3;
+async function browsePage(ref, cursor) {
+  const params = parseListRef(ref);
+  if (!params) throw kino.error("not_found", "unknown browse ref");
+  const n = /^\d{1,4}$/.test(String(cursor ?? "")) ? Number(cursor) : 1;
+  const page = n >= 1 && n <= MAX_PAGE ? n : 1;
+  let got;
+  try {
+    got = await catalogPage({ ...params, page });
+  } catch (e) {
+    throw kino.error("unavailable", "KingRed catalog: " + String(e && e.message || e), { userMessage: t("catalogDown") });
+  }
+  const more = got.items.length > 0 && page < got.totalPages && page < MAX_PAGE;
+  return more ? { items: got.items, next: String(page + 1) } : { items: got.items };
+}
+var TILE_ART = "https://image.tmdb.org/t/p/w780";
+var MOVIE_TILES = [
+  ["accion", "/gqrnQA6Xppdl8vIb2eJc58VC1tW.jpg"],
+  // Mad Max: Fury Road
+  ["comedia", "/jK65srQczOKTpW62wPxwwKztGgE.jpg"],
+  // The Grand Budapest Hotel
+  ["drama", "/pNjh59JSxChQktamG3LMp9ZoQzp.jpg"],
+  // The Shawshank Redemption
+  ["terror", "/nHRUtBwFNnNN70vcQ7lAsjc2T6S.jpg"],
+  // A Quiet Place
+  ["infantiles", "/iJgNOTSBNrC90U2xyYq9ln0b35o.jpg"],
+  // Paddington 2
+  ["anime", "/1RgPyOhN4DRs225BGTlHJqCudII.jpg", "tileMoviesAnime"],
+  // Demon Slayer: Infinity Castle
+  ["documentales", "/sW7VOrkHKYIeV9PaYc5IqGU2XK8.jpg"],
+  // My Octopus Teacher
+  ["doramas", "/wyv2Y9vXYJwJzF6cNVuVwVOsOUj.jpg", "tileMoviesDoramas"],
+  // Along with the Gods
+  ["cristianas", "/4840rkbpsiuow5ew155oVKcqJwj.jpg"]
+  // The Passion of the Christ
+];
+var SERIES_TILES = [
+  ["anime", "/2rmK7mnchw9Xr3XdiTFSxTTLXqv.jpg"],
+  // One Piece
+  ["doramas", "/fNcpHmuZLKoyhNMBEzdqzX8iIvg.jpg"],
+  // The Remarried Empress
+  ["documentales", "/1liP8laBgg5qK2f3yZdOKsxEhGz.jpg", "tileSeriesDocumentales"]
+  // Black Swan Operation
+];
+function categoryTiles() {
+  const tile = (kind) => ([category, art, key]) => ({
+    id: `${category}-${kind}`,
+    title: t(key || "cat_" + category),
+    ref: listRef({ kind, sort: "popular", category }),
+    art: TILE_ART + art
+  });
+  return [...MOVIE_TILES.map(tile("movies")), ...SERIES_TILES.map(tile("series"))].slice(0, 24);
+}
 
 // src/tabs.js
 var TABS = [
@@ -1021,52 +1258,47 @@ var TABS = [
 ];
 var TAB_ROWS = {
   inicio: [
-    { id: "inicio-peliculas", title: "Películas populares", params: { kind: "movies", sort: "popular" } },
-    { id: "inicio-estrenos", title: "Estrenos", params: { kind: "movies", sort: "recent" } },
-    { id: "inicio-series", title: "Series populares", params: { kind: "series", sort: "popular" } },
-    { id: "inicio-anime", title: "Anime", params: { kind: "series", category: "anime", sort: "popular" } },
-    { id: "inicio-terror", title: "Terror", params: { kind: "movies", category: "terror", sort: "popular" } }
+    { id: "inicio-peliculas", key: "rowMoviesPopular", params: { kind: "movies", sort: "popular" } },
+    { id: "inicio-estrenos", key: "rowMoviesRecent", params: { kind: "movies", sort: "recent" } },
+    { id: "inicio-series", key: "rowSeriesPopular", params: { kind: "series", sort: "popular" } },
+    { id: "inicio-anime", key: "cat_anime", params: { kind: "series", category: "anime", sort: "popular" } },
+    { id: "inicio-terror", key: "cat_terror", params: { kind: "movies", category: "terror", sort: "popular" } }
   ],
   peliculas: [
-    { id: "peliculas-popular", title: "Populares", params: { kind: "movies", sort: "popular" } },
-    { id: "peliculas-recent", title: "Estrenos", params: { kind: "movies", sort: "recent" } },
-    { id: "peliculas-rating", title: "Mejor valoradas", params: { kind: "movies", sort: "rating" } }
+    { id: "peliculas-popular", key: "rowPopular", params: { kind: "movies", sort: "popular" } },
+    { id: "peliculas-recent", key: "rowMoviesRecent", params: { kind: "movies", sort: "recent" } },
+    { id: "peliculas-rating", key: "rowMoviesRating", params: { kind: "movies", sort: "rating" } }
   ],
   series: [
-    { id: "series-popular", title: "Populares", params: { kind: "series", sort: "popular" } },
-    { id: "series-recent", title: "Recientes", params: { kind: "series", sort: "recent" } }
+    { id: "series-popular", key: "rowPopular", params: { kind: "series", sort: "popular" } },
+    { id: "series-recent", key: "rowRecent", params: { kind: "series", sort: "recent" } }
   ],
   animes: [
-    { id: "animes-popular", title: "Populares", params: { kind: "series", category: "anime", sort: "popular" } },
-    { id: "animes-recent", title: "Recientes", params: { kind: "series", category: "anime", sort: "recent" } }
+    { id: "animes-popular", key: "rowPopular", params: { kind: "series", category: "anime", sort: "popular" } },
+    { id: "animes-recent", key: "rowRecent", params: { kind: "series", category: "anime", sort: "recent" } }
   ],
   doramas: [
-    { id: "doramas-popular", title: "Populares", params: { kind: "series", category: "doramas", sort: "popular" } },
-    { id: "doramas-recent", title: "Recientes", params: { kind: "series", category: "doramas", sort: "recent" } }
+    { id: "doramas-popular", key: "rowPopular", params: { kind: "series", category: "doramas", sort: "popular" } },
+    { id: "doramas-recent", key: "rowRecent", params: { kind: "series", category: "doramas", sort: "recent" } }
   ],
   accion: [
-    { id: "accion-popular", title: "Populares", params: { kind: "movies", category: "accion", sort: "popular" } },
-    { id: "accion-recent", title: "Recientes", params: { kind: "movies", category: "accion", sort: "recent" } }
+    { id: "accion-popular", key: "rowPopular", params: { kind: "movies", category: "accion", sort: "popular" } },
+    { id: "accion-recent", key: "rowRecent", params: { kind: "movies", category: "accion", sort: "recent" } }
   ],
   terror: [
-    { id: "terror-popular", title: "Populares", params: { kind: "movies", category: "terror", sort: "popular" } },
-    { id: "terror-recent", title: "Recientes", params: { kind: "movies", category: "terror", sort: "recent" } }
+    { id: "terror-popular", key: "rowPopular", params: { kind: "movies", category: "terror", sort: "popular" } },
+    { id: "terror-recent", key: "rowRecent", params: { kind: "movies", category: "terror", sort: "recent" } }
   ],
   comedia: [
-    { id: "comedia-popular", title: "Populares", params: { kind: "movies", category: "comedia", sort: "popular" } },
-    { id: "comedia-recent", title: "Recientes", params: { kind: "movies", category: "comedia", sort: "recent" } }
+    { id: "comedia-popular", key: "rowPopular", params: { kind: "movies", category: "comedia", sort: "popular" } },
+    { id: "comedia-recent", key: "rowRecent", params: { kind: "movies", category: "comedia", sort: "recent" } }
   ]
 };
-function withIds(item) {
-  const tmdb = Number(String(item.ref).split(":")[1]);
-  if (Number.isInteger(tmdb) && tmdb > 0) return { ...item, ids: { tmdb } };
-  return item;
-}
-async function rowFrom({ id, title, params }) {
+async function rowFrom({ id, key, params }) {
   try {
     const { items } = await catalogPage(params);
     if (!items || items.length === 0) return null;
-    return { id, title, items: items.map(withIds) };
+    return { id, title: tIn("es", key), titleEn: tIn("en", key), ref: listRef(params), items };
   } catch {
     return null;
   }
@@ -1081,27 +1313,30 @@ async function loadTab(tabId) {
 
 // src/plugin.js
 var HOME_ROWS = [
-  { id: "movies-popular", title: "Películas populares", query: { kind: "movies", sort: "popular" } },
-  { id: "movies-recent", title: "Estrenos", query: { kind: "movies", sort: "recent" } },
-  { id: "movies-rating", title: "Mejor valoradas", query: { kind: "movies", sort: "rating" } },
-  { id: "movies-accion", title: "Acción", genre: "peliculas", query: { kind: "movies", category: "accion" } },
-  { id: "movies-comedia", title: "Comedia", genre: "peliculas", query: { kind: "movies", category: "comedia" } },
-  { id: "movies-terror", title: "Terror", genre: "peliculas", query: { kind: "movies", category: "terror" } },
-  { id: "series-popular", title: "Series populares", query: { kind: "series", sort: "popular" } },
-  { id: "series-recent", title: "Series recientes", query: { kind: "series", sort: "recent" } },
-  { id: "series-anime", title: "Anime", genre: "anime", query: { kind: "series", category: "anime" } },
-  { id: "series-doramas", title: "Doramas", genre: "series", query: { kind: "series", category: "doramas" } }
+  { id: "movies-popular", key: "rowMoviesPopular", genre: "peliculas", query: { kind: "movies", sort: "popular" } },
+  { id: "movies-recent", key: "rowMoviesRecent", genre: "peliculas", query: { kind: "movies", sort: "recent" } },
+  { id: "movies-rating", key: "rowMoviesRating", genre: "peliculas", query: { kind: "movies", sort: "rating" } },
+  { id: "movies-accion", key: "cat_accion", genre: "peliculas", query: { kind: "movies", category: "accion" } },
+  { id: "movies-comedia", key: "cat_comedia", genre: "peliculas", query: { kind: "movies", category: "comedia" } },
+  { id: "movies-terror", key: "cat_terror", genre: "peliculas", query: { kind: "movies", category: "terror" } },
+  { id: "series-popular", key: "rowSeriesPopular", genre: "series", query: { kind: "series", sort: "popular" } },
+  { id: "series-recent", key: "rowSeriesRecent", genre: "series", query: { kind: "series", sort: "recent" } },
+  { id: "series-anime", key: "cat_anime", genre: "anime", query: { kind: "series", category: "anime" } },
+  { id: "series-doramas", key: "cat_doramas", genre: "series", query: { kind: "series", category: "doramas" } }
 ];
 async function home() {
   const rows = await Promise.all(
-    HOME_ROWS.map(async ({ id, title, genre, query }) => {
+    HOME_ROWS.map(async ({ id, key, genre, query }) => {
       try {
         const { items } = await catalogPage(
           /** @type {any} */
           query
         );
         if (!items.length) return null;
-        return genre ? { id, title, genre, items } : { id, title, items };
+        return { id, title: t(key), genre, ref: listRef(
+          /** @type {any} */
+          query
+        ), items };
       } catch {
         return null;
       }
@@ -1111,6 +1346,12 @@ async function home() {
     /** @type {import("../kino.d.ts").KinoRow[]} */
     rows.filter((row) => row !== null)
   );
+}
+async function browse(ref, cursor) {
+  return browsePage(ref, cursor);
+}
+async function categories() {
+  return categoryTiles();
 }
 async function search(query) {
   const raw = query ? query.q ?? query.query : "";
@@ -1123,7 +1364,12 @@ async function search(query) {
       return [];
     }
   };
-  const [movies, series] = await Promise.all([page("movies"), page("series")]);
+  const type = query && query.type;
+  const none = async () => [];
+  const [movies, series] = await Promise.all([
+    type === "series" ? none() : page("movies"),
+    type === "movie" ? none() : page("series")
+  ]);
   return [...movies, ...series];
 }
 async function episodes(ref) {
@@ -1145,13 +1391,15 @@ async function episodes(ref) {
         season,
         number: episode,
         ref: "t:" + tmdbId + ":" + season + ":" + episode,
-        title: "Capítulo " + episode
+        title: t("episode", { n: episode })
       });
     }
   }
   list.sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || a.number - b.number);
   return { episodes: list, series: { ids: { tmdb: Number(tmdbId) } } };
 }
+var proto_catalog_search = catalogDoor(search);
+var proto_catalog_episodes = catalogEpisodesDoor(episodes);
 var INLINE_SERVERS = ["vidara", "ok.ru"];
 var MAX_ALTERNATIVES = 8;
 function preferredLang() {
@@ -1177,10 +1425,13 @@ function tierOf(cleanUrl, serverHint) {
   return 2;
 }
 function labelOf(lang, serverHint) {
-  return lang + (serverHint ? " · " + serverHint : "");
+  return langName(lang) + (serverHint ? " · " + serverHint : "");
+}
+function langName(lang) {
+  return t("lang_" + lang);
 }
 async function playFromSources(sources) {
-  const noSources = () => kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
+  const noSources = () => kino.error("not_found", "no sources", { userMessage: t("noSources") });
   if (!Array.isArray(sources) || !sources.length) throw noSources();
   const pref = preferredLang();
   const order = [pref, ...["Latino", "Castellano", "Subtitulado", "Otro"].filter((l) => l !== pref)];
@@ -1225,16 +1476,16 @@ async function resolve(ref) {
   if (raw.startsWith("k:")) {
     const rest = raw.slice(2);
     const i = rest.indexOf(":");
-    if (i < 0) throw kino.error("not_found", "bad ref", { userMessage: "Enlace no válido." });
+    if (i < 0) throw kino.error("not_found", "bad ref", { userMessage: t("badRef") });
     const lang = rest.slice(0, i);
     const embedUrl = rest.slice(i + 1);
     const s = await resolveViaHelper(embedUrl, kino, null, true);
-    if (!s) throw kino.error("not_found", "dead", { userMessage: "Este servidor no está disponible." });
-    return { ...s, label: lang };
+    if (!s) throw kino.error("not_found", "dead", { userMessage: t("deadServer") });
+    return { ...s, label: langName(lang) };
   }
   if (!await resolverInstalled(kino)) {
     throw kino.error("unavailable", "resolver missing", {
-      userMessage: "Para reproducir, instala el motor de reproducción (Kino Resolver) que el plugin te pedirá."
+      userMessage: t("needResolver")
     });
   }
   if (raw.startsWith("m:")) {
@@ -1243,7 +1494,7 @@ async function resolve(ref) {
     try {
       doc = await storageJson("SourcesM/" + id + ".json");
     } catch {
-      throw kino.error("not_found", "no stream file", { userMessage: "Este título no está disponible." });
+      throw kino.error("not_found", "no stream file", { userMessage: t("titleMissing") });
     }
     const stream = await playFromSources(parseMovie(doc));
     try {
@@ -1259,7 +1510,7 @@ async function resolve(ref) {
     try {
       doc = await storageJson("SourcesT/" + id + ".json");
     } catch {
-      throw kino.error("not_found", "no stream file", { userMessage: "Este capítulo no está disponible." });
+      throw kino.error("not_found", "no stream file", { userMessage: t("episodeMissing") });
     }
     const { seasons } = parseSeries(doc);
     for (const chapters of seasons.values()) {
@@ -1274,12 +1525,12 @@ async function resolve(ref) {
         }
       }
     }
-    throw kino.error("not_found", "chapter not found", { userMessage: "Este capítulo no está disponible." });
+    throw kino.error("not_found", "chapter not found", { userMessage: t("episodeMissing") });
   }
-  throw kino.error("not_found", "unknown ref", { userMessage: "No se encontró este título." });
+  throw kino.error("not_found", "unknown ref", { userMessage: t("notFound") });
 }
 async function settingsStatus() {
-  return { info: "Catálogo de KingRed: películas y series." };
+  return { info: t("status") };
 }
 async function action(key) {
   if (key === "clearCache") {
@@ -1287,7 +1538,7 @@ async function action(key) {
       kino.storage.remove(TOKEN_KEY);
     } catch (_) {
     }
-    return { message: "Listo" };
+    return { message: t("done") };
   }
   return { message: "" };
 }
@@ -1312,8 +1563,12 @@ async function screenEvent(ev) {
 }
 export {
   action,
+  browse,
+  categories,
   episodes,
   home,
+  proto_catalog_episodes,
+  proto_catalog_search,
   resolve,
   screen,
   screenEvent,

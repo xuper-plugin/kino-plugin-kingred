@@ -5,34 +5,37 @@
 // Storage (anonymous login) and are played through the shared kino-resolver door.
 //
 // home() and search() are the Kino-facing catalog, built on the src/api.js client: home() lays out
-// the design's rows (one catalog first-page each), search() runs `q=` over movies and series. The
-// remaining contract functions are still stubs filled in by later tasks.
+// the design's rows (one catalog first-page each, each with its "Ver más" ref), search() runs `q=` over
+// movies and series; browse() pages any list and categories() offers the category tiles (src/lists.js).
+// The catalog door (proto_catalog_*) lets the author's other plugins (Da-Video) find and play titles here.
 import { catalogPage } from "./api.js";
 import { storageJson, TOKEN_KEY } from "./firebase.js";
 import { parseMovie, parseSeries, cleanEmbed } from "./streams.js";
 import { resolveViaHelper, resolverInstalled } from "./resolve-door.js";
 import { makeStandardScreen } from "./std/index.js";
+import { catalogDoor, catalogEpisodesDoor } from "./std/catalog.js";
 import { LOGO, LOGO_ASPECT } from "./logo.js";
 import { TABS, loadTab } from "./tabs.js";
+import { listRef, browsePage, categoryTiles } from "./lists.js";
+import { t } from "./i18n.js";
 
 // The Home rows, in the order Kino shows them (movies first, then series). Each row is the catalog's
-// FIRST page for a `sort` or `category`: there is no browse pagination (the plugin does not declare
-// the `browse` capability), so a row carries no `ref` and shows no "Ver más". The `id` is a stable
-// slug (it keys the row for Kino); `query` is the src/api.js catalogPage argument.
-// The genre-rows (Acción/Comedia/Terror/Anime/Doramas) carry a `genre` from Kino's closed vocabulary so Kino
-// groups them under Categorías; the movie-genre rows are all "peliculas", Anime is "anime", Doramas are "series".
-// The plain populares/recientes/rating rows are not genres and carry none (Kino guesses from their title).
+// FIRST page for a `sort` or `category`, and carries the `ref` of that list: every list the site serves is
+// paginated, so every row shows "Ver más" (browse). The `id` is a stable slug (it keys the row for Kino);
+// `key` is the i18n key of its title; `query` is the src/api.js catalogPage argument.
+// Every row is typed with a `genre` from Kino's closed vocabulary so Kino files it: movie rows "peliculas",
+// series rows "series", the anime row "anime" (Doramas are series).
 const HOME_ROWS = [
-  { id: "movies-popular", title: "Películas populares", query: { kind: "movies", sort: "popular" } },
-  { id: "movies-recent", title: "Estrenos", query: { kind: "movies", sort: "recent" } },
-  { id: "movies-rating", title: "Mejor valoradas", query: { kind: "movies", sort: "rating" } },
-  { id: "movies-accion", title: "Acción", genre: "peliculas", query: { kind: "movies", category: "accion" } },
-  { id: "movies-comedia", title: "Comedia", genre: "peliculas", query: { kind: "movies", category: "comedia" } },
-  { id: "movies-terror", title: "Terror", genre: "peliculas", query: { kind: "movies", category: "terror" } },
-  { id: "series-popular", title: "Series populares", query: { kind: "series", sort: "popular" } },
-  { id: "series-recent", title: "Series recientes", query: { kind: "series", sort: "recent" } },
-  { id: "series-anime", title: "Anime", genre: "anime", query: { kind: "series", category: "anime" } },
-  { id: "series-doramas", title: "Doramas", genre: "series", query: { kind: "series", category: "doramas" } },
+  { id: "movies-popular", key: "rowMoviesPopular", genre: "peliculas", query: { kind: "movies", sort: "popular" } },
+  { id: "movies-recent", key: "rowMoviesRecent", genre: "peliculas", query: { kind: "movies", sort: "recent" } },
+  { id: "movies-rating", key: "rowMoviesRating", genre: "peliculas", query: { kind: "movies", sort: "rating" } },
+  { id: "movies-accion", key: "cat_accion", genre: "peliculas", query: { kind: "movies", category: "accion" } },
+  { id: "movies-comedia", key: "cat_comedia", genre: "peliculas", query: { kind: "movies", category: "comedia" } },
+  { id: "movies-terror", key: "cat_terror", genre: "peliculas", query: { kind: "movies", category: "terror" } },
+  { id: "series-popular", key: "rowSeriesPopular", genre: "series", query: { kind: "series", sort: "popular" } },
+  { id: "series-recent", key: "rowSeriesRecent", genre: "series", query: { kind: "series", sort: "recent" } },
+  { id: "series-anime", key: "cat_anime", genre: "anime", query: { kind: "series", category: "anime" } },
+  { id: "series-doramas", key: "cat_doramas", genre: "series", query: { kind: "series", category: "doramas" } },
 ];
 
 /**
@@ -43,17 +46,27 @@ const HOME_ROWS = [
  */
 export async function home() {
   const rows = await Promise.all(
-    HOME_ROWS.map(async ({ id, title, genre, query }) => {
+    HOME_ROWS.map(async ({ id, key, genre, query }) => {
       try {
         const { items } = await catalogPage(/** @type {any} */ (query));
         if (!items.length) return null;
-        return genre ? { id, title, genre, items } : { id, title, items };
+        return { id, title: t(key), genre, ref: listRef(/** @type {any} */ (query)), items };
       } catch {
         return null;
       }
     }),
   );
   return /** @type {import("../kino.d.ts").KinoRow[]} */ (rows.filter((row) => row !== null));
+}
+
+/** `browse(ref, cursor)`: a "Ver más" page of a Home or tab row, or of a category tile. */
+export async function browse(ref, cursor) {
+  return browsePage(ref, cursor);
+}
+
+/** `categories()`: the category tiles of Kino's Categorías, each opening its list's "Ver más". */
+export async function categories() {
+  return categoryTiles();
 }
 
 /**
@@ -75,7 +88,13 @@ export async function search(query) {
       return [];
     }
   };
-  const [movies, series] = await Promise.all([page("movies"), page("series")]);
+  // A search for one kind (the catalog door's `type`, Kino's scoped search) asks only that half of the catalog.
+  const type = query && query.type;
+  const none = async () => [];
+  const [movies, series] = await Promise.all([
+    type === "series" ? none() : page("movies"),
+    type === "movie" ? none() : page("series"),
+  ]);
   return [...movies, ...series];
 }
 
@@ -111,7 +130,7 @@ export async function episodes(ref) {
         season,
         number: episode,
         ref: "t:" + tmdbId + ":" + season + ":" + episode,
-        title: "Capítulo " + episode,
+        title: t("episode", { n: episode }),
       });
     }
   }
@@ -119,6 +138,11 @@ export async function episodes(ref) {
 
   return { episodes: list, series: { ids: { tmdb: Number(tmdbId) } } };
 }
+
+// ---- the catalog door (Kino's plugin protocol): Da-Video and the author's other plugins find and list titles here ----
+
+export const proto_catalog_search = catalogDoor(search);
+export const proto_catalog_episodes = catalogEpisodesDoor(episodes);
 
 // Hosts/servers that play straight away (the resolver reads them inline, no 20 s gate): they rank first so the
 // person waits as little as possible. Everything else (streamwish, filelions, an unknown host) is a slow gate.
@@ -163,7 +187,12 @@ function tierOf(cleanUrl, serverHint) {
 
 /** A copy's "Servidor" label: the language, plus the hoster when known ("Latino · streamwish"). */
 function labelOf(lang, serverHint) {
-  return lang + (serverHint ? " · " + serverHint : "");
+  return langName(lang) + (serverHint ? " · " + serverHint : "");
+}
+
+/** A source language ("Latino", "Castellano", "Subtitulado", "Otro") in the person's language. */
+function langName(lang) {
+  return t("lang_" + lang);
 }
 
 /**
@@ -176,7 +205,7 @@ function labelOf(lang, serverHint) {
  */
 async function playFromSources(sources) {
   const noSources = () =>
-    kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
+    kino.error("not_found", "no sources", { userMessage: t("noSources") });
   if (!Array.isArray(sources) || !sources.length) throw noSources();
 
   // The within-tier tie-break is preference-driven: the person's "Idioma preferido" sits at rank 0, the
@@ -243,17 +272,17 @@ export async function resolve(ref) {
   if (raw.startsWith("k:")) {
     const rest = raw.slice(2);
     const i = rest.indexOf(":");
-    if (i < 0) throw kino.error("not_found", "bad ref", { userMessage: "Enlace no válido." });
+    if (i < 0) throw kino.error("not_found", "bad ref", { userMessage: t("badRef") });
     const lang = rest.slice(0, i);
     const embedUrl = rest.slice(i + 1);
     const s = await resolveViaHelper(embedUrl, kino, null, true);
-    if (!s) throw kino.error("not_found", "dead", { userMessage: "Este servidor no está disponible." });
-    return { ...s, label: lang };
+    if (!s) throw kino.error("not_found", "dead", { userMessage: t("deadServer") });
+    return { ...s, label: langName(lang) };
   }
 
   if (!(await resolverInstalled(kino))) {
     throw kino.error("unavailable", "resolver missing", {
-      userMessage: "Para reproducir, instala el motor de reproducción (Kino Resolver) que el plugin te pedirá.",
+      userMessage: t("needResolver"),
     });
   }
 
@@ -265,7 +294,7 @@ export async function resolve(ref) {
     } catch {
       // A catalog title with no SourcesM/<id>.json (a 404, say) must not leak storageJson's plain Error:
       // wrap it in a readable not_found, the way episodes() already swallows a missing document.
-      throw kino.error("not_found", "no stream file", { userMessage: "Este título no está disponible." });
+      throw kino.error("not_found", "no stream file", { userMessage: t("titleMissing") });
     }
     const stream = await playFromSources(parseMovie(doc));
     // A movie played: note it so the std screen's "Continuar viendo" row populates. Best-effort, in a try/catch
@@ -282,7 +311,7 @@ export async function resolve(ref) {
     try {
       doc = await storageJson("SourcesT/" + id + ".json");
     } catch {
-      throw kino.error("not_found", "no stream file", { userMessage: "Este capítulo no está disponible." });
+      throw kino.error("not_found", "no stream file", { userMessage: t("episodeMissing") });
     }
     const { seasons } = parseSeries(doc);
     for (const chapters of seasons.values()) {
@@ -297,10 +326,10 @@ export async function resolve(ref) {
         }
       }
     }
-    throw kino.error("not_found", "chapter not found", { userMessage: "Este capítulo no está disponible." });
+    throw kino.error("not_found", "chapter not found", { userMessage: t("episodeMissing") });
   }
 
-  throw kino.error("not_found", "unknown ref", { userMessage: "No se encontró este título." });
+  throw kino.error("not_found", "unknown ref", { userMessage: t("notFound") });
 }
 
 // ---- Ajustes ▸ KingRed ----
@@ -311,7 +340,7 @@ export async function resolve(ref) {
  * @returns {Promise<{ info: string }>}
  */
 export async function settingsStatus() {
-  return { info: "Catálogo de KingRed: películas y series." };
+  return { info: t("status") };
 }
 
 /**
@@ -324,7 +353,7 @@ export async function settingsStatus() {
 export async function action(key) {
   if (key === "clearCache") {
     try { kino.storage.remove(TOKEN_KEY); } catch (_) { /* nothing to clear */ }
-    return { message: "Listo" };
+    return { message: t("done") };
   }
   return { message: "" };
 }

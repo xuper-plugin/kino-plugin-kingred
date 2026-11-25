@@ -19,9 +19,13 @@ test("apiVersion is at least 20 (the plugin protocol / resolver door)", () => {
   assert.ok(manifest.apiVersion >= 20, `apiVersion ${manifest.apiVersion} < 20`);
 });
 
-test("capabilities are exactly episodes, home, resolve, screen, search", () => {
+test("apiVersion is at least 30 (the standard screen and the catalog door)", () => {
+  assert.ok(manifest.apiVersion >= 30, `apiVersion ${manifest.apiVersion} < 30`);
+});
+
+test("capabilities are exactly browse, episodes, home, resolve, screen, search", () => {
   assert.ok(Array.isArray(manifest.capabilities));
-  assert.deepEqual([...manifest.capabilities].sort(), ["episodes", "home", "resolve", "screen", "search"]);
+  assert.deepEqual([...manifest.capabilities].sort(), ["browse", "episodes", "home", "resolve", "screen", "search"]);
   assert.equal(manifest.streamHosts, "any");
 });
 

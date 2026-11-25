@@ -43,7 +43,7 @@ test("home() returns non-empty, KinoRow-shaped rows whose items are non-empty", 
     assert.equal(typeof row.title, "string");
     assert.ok(row.title.length > 0, "row.title is non-empty");
     assert.ok(Array.isArray(row.items) && row.items.length > 0, `row "${row.id}" has non-empty items`);
-    assert.equal("ref" in row, false, "no browse capability: a row carries no ref");
+    assert.match(row.ref, /^kr:(movies|series):/, "every row carries its list's ref (browse: Ver más)");
     for (const item of row.items) {
       assert.match(item.ref, REF, `item ref "${item.ref}" starts with m: or t:`);
     }

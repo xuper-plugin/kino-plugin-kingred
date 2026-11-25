@@ -46,6 +46,9 @@ function toItem(entry, { tag, kind }) {
   if (entry.poster_url) item.poster = entry.poster_url;
   if (entry.backdrop_url) item.backdrop = entry.backdrop_url;
   if (entry.overview) item.overview = entry.overview;
+  // The catalog is keyed by TMDB: the id lets Kino's title page, Da-Video and "Continuar viendo" match the title.
+  const tmdb = Number(entry.tmdb_id);
+  if (Number.isInteger(tmdb) && tmdb > 0) item.ids = { tmdb };
   return item;
 }
 
