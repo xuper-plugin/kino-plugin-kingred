@@ -1245,7 +1245,14 @@ async function resolve(ref) {
     } catch {
       throw kino.error("not_found", "no stream file", { userMessage: "Este título no está disponible." });
     }
-    return playFromSources(parseMovie(doc));
+    const stream = await playFromSources(parseMovie(doc));
+    if (/^m:\d+$/.test(raw)) {
+      try {
+        standard().notePlayed(raw);
+      } catch (_) {
+      }
+    }
+    return stream;
   }
   const chapter = /^t:(\d+):(\d+):(\d+)$/.exec(raw);
   if (chapter) {

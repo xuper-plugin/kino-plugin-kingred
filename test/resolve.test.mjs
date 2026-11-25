@@ -281,6 +281,34 @@ test("(k) an absent/invalid preferred language keeps Latino primary (default unc
   assert.ok(stream.label.startsWith("Latino"), "an unknown preference leaves Latino as primary");
 });
 
+test("(l) resolving a movie notes it for the std 'Continuar viendo' row; a chapter does not (series exclusion)", async () => {
+  // The std screen is a module-level singleton (`let std`) that binds to the kino live when it is first built, so a
+  // storage assertion on globalThis.kino would read the wrong store once an earlier test has created it. A fresh module
+  // instance (a cache-busting query) gives this test its own `std`, bound to the kino installed right here -- deterministic
+  // regardless of test order. The kit's recent row lives under RECENT_KEY ("recent1"); playedKey("m:<id>") is "t:<id>".
+  const { resolve: freshResolve } = await import("../src/plugin.js?recent=" + Date.now());
+
+  installKino({
+    docs: { "1263337": MOVIE_DOC, "1396": SERIES_DOC },
+    door: {
+      [MOVIE_FIRST]: { streams: [{ url: "https://cdn/movie.m3u8", server: "yandex" }] },
+      [EPISODE_LATINO]: { streams: [{ url: "https://cdn/ep.m3u8" }] },
+    },
+  });
+
+  // A chapter resolves fine but is NOT noted: KingRed's t:<id>:<s>:<e> ref does not match the std kit's m/s/e playedKey,
+  // so noting it could never surface a card. The recent key stays unset.
+  const chapter = await freshResolve("t:1396:1:1");
+  assert.equal(chapter.url, "https://cdn/ep.m3u8", "the chapter still resolves to a playable stream");
+  assert.equal(kino.storage.get("recent1"), null, "a resolved chapter leaves the recent row empty (series exclusion)");
+
+  // A movie resolves AND is noted, under the kit's recent key, keyed by its TMDB id (playedKey turns m:<id> into t:<id>).
+  const movie = await freshResolve("m:1263337");
+  assert.equal(movie.url, "https://cdn/movie.m3u8", "the movie still resolves to a playable stream");
+  const recent = JSON.parse(kino.storage.get("recent1") || "null");
+  assert.ok(Array.isArray(recent) && recent.includes("t:1263337"), "the played movie is recorded in the recent row");
+});
+
 test("(i) a storage fetch that throws surfaces a readable not_found, never a raw error", async () => {
   // No doc for this id -> the Storage GET 404s -> storageJson throws a plain Error. resolve() must wrap it in a
   // kino.error with a userMessage, the way episodes() swallows a missing document, not leak the bare Error.

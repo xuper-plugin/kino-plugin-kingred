@@ -267,7 +267,13 @@ export async function resolve(ref) {
       // wrap it in a readable not_found, the way episodes() already swallows a missing document.
       throw kino.error("not_found", "no stream file", { userMessage: "Este título no está disponible." });
     }
-    return playFromSources(parseMovie(doc));
+    const stream = await playFromSources(parseMovie(doc));
+    // A movie played: note it so the std screen's "Continuar viendo" row populates. Best-effort, in a try/catch
+    // that can never fail playback -- and only here, on the success path (playFromSources throws if nothing opens).
+    // Series/episode refs (t:...) are not noted: KingRed's t: ref scheme predates the std kit's m/s/e playedKey
+    // convention, so they wouldn't match a card. Movie recents only (follow-up).
+    if (/^m:\d+$/.test(raw)) { try { standard().notePlayed(raw); } catch (_) { /* recent row is best-effort */ } }
+    return stream;
   }
 
   const chapter = /^t:(\d+):(\d+):(\d+)$/.exec(raw);
