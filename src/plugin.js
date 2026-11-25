@@ -1,20 +1,73 @@
 // @ts-check
+/// <reference path="../kino.d.ts" />
 // Kino plugin: KingRed -- the movies and series catalog of the KingRed app (com.poison.kingred),
 // surfaced inside Kino. The catalog comes from st.kinghydra.site; the stream links live in Firebase
 // Storage (anonymous login) and are played through the shared kino-resolver door.
 //
-// Task 1 scaffold: every declared contract function is a stub so the bundle is valid and installs.
-// The catalog client, Firebase auth, stream parsing, the resolver-door helper and the install gate
-// arrive in later tasks.
+// home() and search() are the Kino-facing catalog, built on the src/api.js client: home() lays out
+// the design's rows (one catalog first-page each), search() runs `q=` over movies and series. The
+// remaining contract functions are still stubs filled in by later tasks.
+import { catalogPage } from "./api.js";
 
-/** Home rows (populares, recientes, categorías, ...). */
+// The Home rows, in the order Kino shows them (movies first, then series). Each row is the catalog's
+// FIRST page for a `sort` or `category`: there is no browse pagination (the plugin does not declare
+// the `browse` capability), so a row carries no `ref` and shows no "Ver más". The `id` is a stable
+// slug (it keys the row for Kino); `query` is the src/api.js catalogPage argument.
+const HOME_ROWS = [
+  { id: "movies-popular", title: "Películas populares", query: { kind: "movies", sort: "popular" } },
+  { id: "movies-recent", title: "Estrenos", query: { kind: "movies", sort: "recent" } },
+  { id: "movies-rating", title: "Mejor valoradas", query: { kind: "movies", sort: "rating" } },
+  { id: "movies-accion", title: "Acción", query: { kind: "movies", category: "accion" } },
+  { id: "movies-comedia", title: "Comedia", query: { kind: "movies", category: "comedia" } },
+  { id: "movies-terror", title: "Terror", query: { kind: "movies", category: "terror" } },
+  { id: "series-popular", title: "Series populares", query: { kind: "series", sort: "popular" } },
+  { id: "series-recent", title: "Series recientes", query: { kind: "series", sort: "recent" } },
+  { id: "series-anime", title: "Anime", query: { kind: "series", category: "anime" } },
+  { id: "series-doramas", title: "Doramas", query: { kind: "series", category: "doramas" } },
+];
+
+/**
+ * Home rows (populares, recientes, categorías, ...). The rows are fetched concurrently; each is
+ * wrapped on its own and a row that errors OR comes back empty is DROPPED, so a wrong kind/category
+ * combo or a network hiccup never breaks Home.
+ * @returns {Promise<import("../kino.d.ts").KinoRow[]>}
+ */
 export async function home() {
-  return [];
+  const rows = await Promise.all(
+    HOME_ROWS.map(async ({ id, title, query }) => {
+      try {
+        const { items } = await catalogPage(/** @type {any} */ (query));
+        if (!items.length) return null;
+        return { id, title, items };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return /** @type {import("../kino.d.ts").KinoRow[]} */ (rows.filter((row) => row !== null));
 }
 
-/** Catalog search over movies and series. */
-export async function search() {
-  return [];
+/**
+ * Catalog search over movies and series: one page of each (`q=`), movies first. The two kinds run
+ * concurrently and each is wrapped on its own, so a failure of one still returns the other's hits.
+ * An empty query returns [].
+ * @param {import("../kino.d.ts").KinoSearchQuery & { query?: string }} query
+ * @returns {Promise<import("../kino.d.ts").KinoItem[]>}
+ */
+export async function search(query) {
+  const raw = query ? query.q ?? query.query : "";
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (!text) return [];
+
+  const page = async (/** @type {"movies" | "series"} */ kind) => {
+    try {
+      return (await catalogPage({ kind, q: text })).items;
+    } catch {
+      return [];
+    }
+  };
+  const [movies, series] = await Promise.all([page("movies"), page("series")]);
+  return [...movies, ...series];
 }
 
 /** A series' seasons and chapters (from SourcesT in Firebase Storage). */
