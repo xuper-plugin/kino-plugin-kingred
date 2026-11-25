@@ -48,6 +48,7 @@ test("movies page maps to KinoItems with m: refs and the movie kind", async () =
 
   assert.ok(items.length > 0, "expected at least one item");
   assert.equal(items[0].ref, "m:" + first.tmdb_id);
+  assert.equal(items[0].id, "m" + first.tmdb_id);
   assert.equal(items[0].kind, "movie");
   assert.equal(items[0].title, first.title);
   assert.equal(items[0].poster, first.poster_url);
@@ -65,9 +66,26 @@ test("series page maps to KinoItems with t: refs and the series kind", async () 
 
   assert.ok(items.length > 0, "expected at least one item");
   assert.equal(items[0].ref, "t:" + first.tmdb_id);
+  assert.equal(items[0].id, "t" + first.tmdb_id);
   assert.equal(items[0].kind, "series");
   assert.equal(items[0].poster, first.poster_url);
   assert.equal(totalPages, body.total_pages);
+});
+
+test("every item id is colon-free and matches the KinoItem.id pattern", async () => {
+  // kino.d.ts:33 requires id to match ^[A-Za-z0-9._~-]{1,128}$, which excludes the colon of ref.
+  const ID = /^[A-Za-z0-9._~-]{1,128}$/;
+  for (const file of ["catalog-movies.json", "catalog-series.json"]) {
+    const body = fixture(file);
+    mockFetch(body);
+    const kind = body.movies ? "movies" : "series";
+    const { items } = await catalogPage({ kind, page: 1 });
+    assert.ok(items.length > 0, `expected items for ${file}`);
+    for (const item of items) {
+      assert.match(item.id, ID, `id "${item.id}" must match KinoItem.id pattern`);
+      assert.notEqual(item.id, item.ref, "id must not equal the colon-bearing ref");
+    }
+  }
 });
 
 test("a search builds the URL with q= and omits empty category/sort", async () => {

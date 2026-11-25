@@ -19,10 +19,12 @@ export const CATEGORIES = [
   "doramas", "drama", "infantiles", "terror",
 ];
 
-/** The ref prefix and singular kind Kino uses for each catalog kind. */
+// `tag` ("m"/"t") disambiguates a movie from a series that share a TMDB id. It builds the opaque
+// `ref` ("m:"+tmdb_id) and the `id` ("m"+tmdb_id): the id must match KinoItem's ^[A-Za-z0-9._~-]{1,128}$
+// (kino.d.ts:33), which EXCLUDES the colon, so the colon lives only in `ref`.
 const KIND = {
-  movies: { prefix: "m:", kind: "movie" },
-  series: { prefix: "t:", kind: "series" },
+  movies: { tag: "m", kind: "movie" },
+  series: { tag: "t", kind: "series" },
 };
 
 /** Builds the catalog URL, appending only the query params that are present (empty ones are 422). */
@@ -35,10 +37,11 @@ function catalogUrl({ kind, page, category, sort, q }) {
 }
 
 /** One catalog entry (movie or series) mapped to a KinoItem; `kind` is the singular Kino kind. */
-function toItem(entry, { prefix, kind }) {
-  const ref = prefix + entry.tmdb_id;
+function toItem(entry, { tag, kind }) {
+  const ref = tag + ":" + entry.tmdb_id;
+  const id = tag + entry.tmdb_id;
   /** @type {import("../kino.d.ts").KinoItem} */
-  const item = { id: ref, ref, title: entry.title, kind };
+  const item = { id, ref, title: entry.title, kind };
   if (entry.year !== undefined && entry.year !== null) item.year = entry.year;
   if (entry.poster_url) item.poster = entry.poster_url;
   if (entry.backdrop_url) item.backdrop = entry.backdrop_url;
