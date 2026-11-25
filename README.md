@@ -1,3 +1,29 @@
-# kino-plugin-kingred
+# KingRed (Kino plugin)
 
-Kino plugin for KingRed (com.poison.kingred). Work in progress.
+Películas y series de **KingRed** (`com.poison.kingred`) para [Kino](https://github.com/kinotvapp/kino-light).
+
+Expone el catálogo público de KingRed —~21.000 películas y ~8.500 series— con Inicio,
+búsqueda, fichas y temporadas. La reproducción se delega al motor compartido
+**[Kino Resolver](https://github.com/xuper-plugin/kino-plugin-kino-resolver)**.
+
+## Requisitos
+
+Este plugin **necesita el plugin Kino Resolver** para reproducir: cada enlace
+(streamwish, vidhide, filelions, ok.ru, doodstream, filemoon, vidara, Yandex Disk…)
+se resuelve a través de su puerta `resolver`. Si el resolver no está instalado, KingRed
+muestra una pantalla que ofrece **instalarlo con un toque** (y lo lista en `recommends`).
+Los hosters con gate JS que el resolver devuelve como `needs_browser` se capturan en el
+WebView propio de KingRed (por eso figuran en `hosts`).
+
+## Idiomas
+
+El catálogo trae pistas en **Latino**, **Castellano** y **Subtitulado**; Kino abre la que
+haya disponible por título y, si una falla, prueba las demás.
+
+## Desarrollo
+
+- Código en `src/`, empaquetado en `plugin.js` con `npm run build`.
+- `npm test` — pruebas del manifiesto y del parseo de catálogo/streams.
+- `npm run validate` — valida el bundle contra el contrato del SDK.
+- Humo e2e contra el catálogo público (sin auth):
+  `node sdk/run.mjs . home` y `node sdk/run.mjs . search "batman"`.

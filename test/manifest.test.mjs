@@ -19,11 +19,10 @@ test("apiVersion is at least 20 (the plugin protocol / resolver door)", () => {
   assert.ok(manifest.apiVersion >= 20, `apiVersion ${manifest.apiVersion} < 20`);
 });
 
-test("capabilities include search, home, resolve and episodes", () => {
+test("capabilities are exactly episodes, home, resolve, screen, search", () => {
   assert.ok(Array.isArray(manifest.capabilities));
-  for (const cap of ["search", "home", "resolve", "episodes"]) {
-    assert.ok(manifest.capabilities.includes(cap), `missing capability "${cap}"`);
-  }
+  assert.deepEqual([...manifest.capabilities].sort(), ["episodes", "home", "resolve", "screen", "search"]);
+  assert.equal(manifest.streamHosts, "any");
 });
 
 test("consumes the resolver door, resolve only (no rank)", () => {

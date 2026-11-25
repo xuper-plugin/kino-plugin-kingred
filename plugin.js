@@ -253,7 +253,7 @@ function readyView() {
       padding: 24,
       gap: 16,
       children: [
-        { type: "Text", key: "ready", style: "p", text: "Todo listo. Busca o explora KingRed desde Inicio." }
+        { type: "Text", key: "readyText", style: "p", text: "Todo listo. Busca o explora KingRed desde Inicio." }
       ]
     }
   };

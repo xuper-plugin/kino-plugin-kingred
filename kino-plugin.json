@@ -5,15 +5,34 @@
   "apiVersion": 20,
   "entry": "plugin.js",
   "icon": "icon.png",
-  "description": "Catálogo de películas y series de KingRed: búsqueda, Inicio, fichas y temporadas, con reproducción delegada al motor kino-resolver.",
-  "descriptionEn": "KingRed movies and series catalog: search, Home, title pages and seasons, with playback delegated to the kino-resolver engine.",
+  "description": "Películas y series de KingRed — catálogo público resuelto con Kino Resolver (Latino, Castellano y Subtitulado).",
+  "descriptionEn": "KingRed movies and series — public catalog resolved with Kino Resolver (Latino, Castilian and Subtitled).",
   "author": "xuper-plugin",
   "homepage": "https://github.com/xuper-plugin/kino-plugin-kingred",
   "hosts": [
     "st.kinghydra.site",
     "identitytoolkit.googleapis.com",
     "firebasestorage.googleapis.com",
-    "image.tmdb.org"
+    "image.tmdb.org",
+    "ok.ru",
+    "vidara.to",
+    "audinifer.com",
+    "hanerix.com",
+    "filelions.to",
+    "filelions.top",
+    "filelions.com",
+    "streamwish.to",
+    "streamwish.com",
+    "strwish.com",
+    "embedwish.com",
+    "wishembed.com",
+    "hlswish.com",
+    "vibuxer.com",
+    "vidhide.com",
+    "vidhidepro.com",
+    "doodstream.com",
+    "filemoon.sx",
+    "disk.yandex.com"
   ],
   "capabilities": [
     "search",
@@ -28,7 +47,14 @@
     "movies",
     "series"
   ],
-  "color": "#DC2626",
+  "color": "#F5455C",
+  "theme": {
+    "accent": "#F5455C",
+    "onAccent": "#1A0205",
+    "background": "#0C0608",
+    "surface": "#1F0C10",
+    "highlight": "#FF5A66"
+  },
   "screen": {
     "label": "KingRed",
     "labelEn": "KingRed",
