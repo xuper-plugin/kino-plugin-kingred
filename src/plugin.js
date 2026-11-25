@@ -8,7 +8,7 @@
 // the design's rows (one catalog first-page each), search() runs `q=` over movies and series. The
 // remaining contract functions are still stubs filled in by later tasks.
 import { catalogPage } from "./api.js";
-import { storageJson } from "./firebase.js";
+import { storageJson, TOKEN_KEY } from "./firebase.js";
 import { parseMovie, parseSeries, cleanEmbed } from "./streams.js";
 import { resolveViaHelper, resolverInstalled } from "./resolve-door.js";
 import { makeStandardScreen } from "./std/index.js";
@@ -274,14 +274,40 @@ export async function resolve(ref) {
   throw kino.error("not_found", "unknown ref", { userMessage: "No se encontró este título." });
 }
 
+// ---- Ajustes ▸ KingRed ----
+
+/**
+ * The "Estado" status line on the plugin's own settings page: a short, plain-text summary of the
+ * catalog (≤200 chars). KingRed keeps no per-list cache to count, so the line is a fixed description.
+ * @returns {Promise<{ info: string }>}
+ */
+export async function settingsStatus() {
+  return { info: "Catálogo de KingRed: películas y series." };
+}
+
+/**
+ * Runs a settings action button. `clearCache` drops ONLY KingRed-owned state -- the cached anonymous
+ * Firebase token (TOKEN_KEY) -- and never touches std's own storage keys; a missing token or an
+ * unavailable storage is swallowed. An unknown key is a no-op `{ message: "" }` (never throws).
+ * @param {string} key
+ * @returns {Promise<{ message: string }>}
+ */
+export async function action(key) {
+  if (key === "clearCache") {
+    try { kino.storage.remove(TOKEN_KEY); } catch (_) { /* nothing to clear */ }
+    return { message: "Listo" };
+  }
+  return { message: "" };
+}
+
 // ---- the screen: the standard xuper-plugin screen (src/std) ----
 
 // KingRed plays every link through the shared kino-resolver door (resolve() refuses with an install prompt while it is
 // missing), so the kit shows its own resolver install gate (`needsResolver: true`) until it is installed, then the browse
-// screen built from TABS / loadTab (src/tabs.js). `hasSettings: false` for now; Task 4 adds the settings form and flips it.
+// screen built from TABS / loadTab (src/tabs.js). `hasSettings: true`: the manifest declares the settings form (Task 4).
 let std = null;
 const standard = () => (std ??= makeStandardScreen({
-  kino, name: "KingRed", logo: LOGO, logoAspect: LOGO_ASPECT, needsResolver: true, hasSettings: false,
+  kino, name: "KingRed", logo: LOGO, logoAspect: LOGO_ASPECT, needsResolver: true, hasSettings: true,
   tabs: TABS, loadTab,
 }));
 

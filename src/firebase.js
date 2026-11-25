@@ -21,8 +21,8 @@ const SIGNUP_URL = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?ke
 /** Storage object download base: `<STORAGE_BASE><encodeURIComponent(path)>?alt=media`. */
 const STORAGE_BASE = "https://firebasestorage.googleapis.com/v0/b/duo-play.appspot.com/o/";
 
-/** kino.storage key for the cached `{ token, exp }`. */
-const TOKEN_KEY = "kingred:fbToken";
+/** kino.storage key for the cached `{ token, exp }`. Exported so the settings clearCache action can drop it. */
+export const TOKEN_KEY = "kingred:fbToken";
 
 /** Treat the token as expired this long before its real expiry, so a request never races the clock. */
 const SAFETY_MS = 5 * 60 * 1000;

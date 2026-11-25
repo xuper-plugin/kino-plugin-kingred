@@ -1250,6 +1250,19 @@ async function resolve(ref) {
   }
   throw kino.error("not_found", "unknown ref", { userMessage: "No se encontró este título." });
 }
+async function settingsStatus() {
+  return { info: "Catálogo de KingRed: películas y series." };
+}
+async function action(key) {
+  if (key === "clearCache") {
+    try {
+      kino.storage.remove(TOKEN_KEY);
+    } catch (_) {
+    }
+    return { message: "Listo" };
+  }
+  return { message: "" };
+}
 var std = null;
 var standard = () => std ?? (std = makeStandardScreen({
   kino,
@@ -1257,7 +1270,7 @@ var standard = () => std ?? (std = makeStandardScreen({
   logo: LOGO,
   logoAspect: LOGO_ASPECT,
   needsResolver: true,
-  hasSettings: false,
+  hasSettings: true,
   tabs: TABS,
   loadTab
 }));
@@ -1270,10 +1283,12 @@ async function screenEvent(ev) {
   return standard().screenEvent(ev && typeof ev === "object" ? ev : {});
 }
 export {
+  action,
   episodes,
   home,
   resolve,
   screen,
   screenEvent,
-  search
+  search,
+  settingsStatus
 };

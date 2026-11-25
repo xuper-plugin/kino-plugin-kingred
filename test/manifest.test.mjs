@@ -61,3 +61,35 @@ test("hosts include the KingRed catalog, Firebase auth and storage", () => {
     assert.ok(manifest.hosts.includes(host), `missing host "${host}"`);
   }
 });
+
+test("settings form: audio select (lat/cast/sub, default lat), info status, clearCache action", () => {
+  assert.ok(Array.isArray(manifest.settings), "settings must be an array");
+  const byKey = (key) => manifest.settings.find((s) => s && s.key === key);
+
+  const audio = byKey("audio");
+  assert.ok(audio, "a select keyed 'audio' is present");
+  assert.equal(audio.type, "select");
+  assert.equal(audio.default, "lat", "the preferred language defaults to Latino");
+  assert.deepEqual(
+    audio.options.map((o) => o.value),
+    ["lat", "cast", "sub"],
+    "the audio options are exactly lat, cast, sub",
+  );
+
+  const info = byKey("info");
+  assert.ok(info, "a status keyed 'info' is present");
+  assert.equal(info.type, "status");
+
+  const clearCache = byKey("clearCache");
+  assert.ok(clearCache, "an action keyed 'clearCache' is present");
+  assert.equal(clearCache.type, "action");
+});
+
+test("screen block opens from the menu and settings, with a settingsButton", () => {
+  const s = manifest.screen;
+  assert.ok(s, "a screen block is present");
+  assert.deepEqual([...s.opensFrom].sort(), ["menu", "settings"]);
+  assert.ok(s.settingsButton, "the screen declares a settingsButton");
+  assert.equal(typeof s.settingsButton.label, "string");
+  assert.equal(s.settingsIn, "both");
+});

@@ -55,14 +55,68 @@
     "surface": "#1F0C10",
     "highlight": "#FF5A66"
   },
+  "settings": [
+    {
+      "key": "audioSection",
+      "type": "section",
+      "label": "Idioma",
+      "labelEn": "Language",
+      "hint": "Cada título puede traer varios idiomas; Kino abre primero el que elijas y, si falla, los demás.",
+      "hintEn": "A title may come in several languages; Kino opens the one you pick first and, if it fails, the others."
+    },
+    {
+      "key": "audio",
+      "type": "select",
+      "label": "Idioma preferido",
+      "labelEn": "Preferred language",
+      "default": "lat",
+      "options": [
+        {
+          "value": "lat",
+          "label": "Latino",
+          "labelEn": "Latino"
+        },
+        {
+          "value": "cast",
+          "label": "Castellano",
+          "labelEn": "Castilian"
+        },
+        {
+          "value": "sub",
+          "label": "Subtitulado",
+          "labelEn": "Subtitled"
+        }
+      ]
+    },
+    {
+      "key": "info",
+      "type": "status",
+      "label": "Estado",
+      "labelEn": "Status"
+    },
+    {
+      "key": "clearCache",
+      "type": "action",
+      "label": "Vaciar caché",
+      "labelEn": "Clear cache",
+      "confirm": "¿Vaciar la caché?",
+      "confirmEn": "Clear the cache?"
+    }
+  ],
   "screen": {
     "label": "KingRed",
     "labelEn": "KingRed",
     "icon": "movie",
     "menuOpens": "screen",
     "opensFrom": [
-      "menu"
-    ]
+      "menu",
+      "settings"
+    ],
+    "settingsButton": {
+      "label": "Abrir KingRed",
+      "labelEn": "Open KingRed"
+    },
+    "settingsIn": "both"
   },
   "consumes": {
     "resolver": {
