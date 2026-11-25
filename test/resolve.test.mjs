@@ -281,7 +281,7 @@ test("(k) an absent/invalid preferred language keeps Latino primary (default unc
   assert.ok(stream.label.startsWith("Latino"), "an unknown preference leaves Latino as primary");
 });
 
-test("(l) resolving a movie notes it for the std 'Continuar viendo' row; a chapter does not (series exclusion)", async () => {
+test("(l) resolving a movie notes the movie, and an episode notes its series, for the std 'Continuar viendo' row", async () => {
   // The std screen is a module-level singleton (`let std`) that binds to the kino live when it is first built, so a
   // storage assertion on globalThis.kino would read the wrong store once an earlier test has created it. A fresh module
   // instance (a cache-busting query) gives this test its own `std`, bound to the kino installed right here -- deterministic
@@ -296,17 +296,19 @@ test("(l) resolving a movie notes it for the std 'Continuar viendo' row; a chapt
     },
   });
 
-  // A chapter resolves fine but is NOT noted: KingRed's t:<id>:<s>:<e> ref does not match the std kit's m/s/e playedKey,
-  // so noting it could never surface a card. The recent key stays unset.
+  // An episode resolves AND notes its SERIES: resolve() calls notePlayed("s:<seriesId>"), and playedKey("s:1396")
+  // is "t:1396", which matches the series card by its ids.tmdb. So the show surfaces in "Continuar viendo".
   const chapter = await freshResolve("t:1396:1:1");
   assert.equal(chapter.url, "https://cdn/ep.m3u8", "the chapter still resolves to a playable stream");
-  assert.equal(kino.storage.get("recent1"), null, "a resolved chapter leaves the recent row empty (series exclusion)");
+  const afterEpisode = JSON.parse(kino.storage.get("recent1") || "null");
+  assert.ok(Array.isArray(afterEpisode) && afterEpisode.includes("t:1396"), "the played episode records its series in the recent row");
 
   // A movie resolves AND is noted, under the kit's recent key, keyed by its TMDB id (playedKey turns m:<id> into t:<id>).
   const movie = await freshResolve("m:1263337");
   assert.equal(movie.url, "https://cdn/movie.m3u8", "the movie still resolves to a playable stream");
   const recent = JSON.parse(kino.storage.get("recent1") || "null");
   assert.ok(Array.isArray(recent) && recent.includes("t:1263337"), "the played movie is recorded in the recent row");
+  assert.ok(recent.includes("t:1396"), "the earlier episode's series is still in the recent row");
 });
 
 test("(i) a storage fetch that throws surfaces a readable not_found, never a raw error", async () => {
