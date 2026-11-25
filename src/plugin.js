@@ -8,10 +8,12 @@
 // the design's rows (one catalog first-page each), search() runs `q=` over movies and series. The
 // remaining contract functions are still stubs filled in by later tasks.
 import { catalogPage } from "./api.js";
-import { storageJson } from "./firebase.js";
+import { storageJson, TOKEN_KEY } from "./firebase.js";
 import { parseMovie, parseSeries, cleanEmbed } from "./streams.js";
 import { resolveViaHelper, resolverInstalled } from "./resolve-door.js";
-import { gateView, readyView, RESOLVER_REPO } from "./gate.js";
+import { makeStandardScreen } from "./std/index.js";
+import { LOGO, LOGO_ASPECT } from "./logo.js";
+import { TABS, loadTab } from "./tabs.js";
 
 // The Home rows, in the order Kino shows them (movies first, then series). Each row is the catalog's
 // FIRST page for a `sort` or `category`: there is no browse pagination (the plugin does not declare
@@ -124,10 +126,20 @@ export async function episodes(ref) {
 // needs_browser -> a ~20 s WebView capture that usually fails for its big files. It falls to the slow tier so the
 // known-good inline copies (vidara/ok.ru) are tried first; a Yandex extractor (gated Plan B) would restore tier 0.
 const INLINE_SERVERS = ["vidara", "ok.ru"];
-/** Within a speed tier, play the person's preferred language first: Latino > Castellano > Subtitulado > Otro. */
-const LANG_RANK = { Latino: 0, Castellano: 1, Subtitulado: 2, Otro: 3 };
 /** At most this many lazy copies ride along in a Stream's `alternatives` (the KinoStream limit). */
 const MAX_ALTERNATIVES = 8;
+
+/**
+ * The person's preferred audio from Ajustes ▸ KingRed ("Idioma preferido"), as a full language name. Reads
+ * the `audio` setting (lat|cast|sub); a missing/unreadable store or an unknown value falls back to "Latino"
+ * -- so the default, and anything unexpected, keeps today's Latino-first within-tier tie-break.
+ * @returns {"Latino"|"Castellano"|"Subtitulado"}
+ */
+function preferredLang() {
+  let v = "lat";
+  try { v = String(kino.config.get("audio") || "lat"); } catch (_) { /* no store: keep the default */ }
+  return /** @type {any} */ ({ lat: "Latino", cast: "Castellano", sub: "Subtitulado" }[v] || "Latino");
+}
 
 /** The host of an absolute url (lowercased), or "" when it has none -- for inline-host matching. */
 function hostOf(url) {
@@ -167,14 +179,21 @@ async function playFromSources(sources) {
     kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
   if (!Array.isArray(sources) || !sources.length) throw noSources();
 
+  // The within-tier tie-break is preference-driven: the person's "Idioma preferido" sits at rank 0, the
+  // rest keep a stable order after it. Built once per call; by default (or an unknown value) the preferred
+  // language is Latino, so Latino stays primary -- today's behavior.
+  const pref = preferredLang();
+  const order = [pref, ...["Latino", "Castellano", "Subtitulado", "Otro"].filter((l) => l !== pref)];
+  const langRankOf = (lang) => { const i = order.indexOf(lang); return i < 0 ? order.length : i; };
+
   // Clean each embed once (idempotent on an already-clean url) and tag it with its tier and language rank,
   // then sort ascending by (tier, langRank, original order). Array.prototype.sort is stable, so equal
   // (tier, langRank) copies keep their original (file) order. The language rank is the within-tier
-  // tie-break: when two copies play equally fast, the preferred language (Latino) plays as primary --
-  // without it, a series whose Castellano copy sits in a faster tier would always beat its Latino copy.
+  // tie-break: when two copies play equally fast, the preferred language plays as primary -- without it, a
+  // series whose non-preferred copy sits in a faster tier would always beat the preferred one.
   const ranked = sources.map((source) => {
     const { url } = cleanEmbed(source.url);
-    const langRank = LANG_RANK[source.lang] ?? LANG_RANK.Otro;
+    const langRank = langRankOf(source.lang);
     return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url, tier: tierOf(url, source.serverHint), langRank };
   });
   ranked.sort((a, b) => a.tier - b.tier || a.langRank - b.langRank);
@@ -248,7 +267,13 @@ export async function resolve(ref) {
       // wrap it in a readable not_found, the way episodes() already swallows a missing document.
       throw kino.error("not_found", "no stream file", { userMessage: "Este título no está disponible." });
     }
-    return playFromSources(parseMovie(doc));
+    const stream = await playFromSources(parseMovie(doc));
+    // A movie played: note it so the std screen's "Continuar viendo" row populates. Best-effort, in a try/catch
+    // that can never fail playback -- and only here, on the success path (playFromSources throws if nothing opens).
+    // Series/episode refs (t:...) are not noted: KingRed's t: ref scheme predates the std kit's m/s/e playedKey
+    // convention, so they wouldn't match a card. Movie recents only (follow-up).
+    if (/^m:\d+$/.test(raw)) { try { standard().notePlayed(raw); } catch (_) { /* recent row is best-effort */ } }
+    return stream;
   }
 
   const chapter = /^t:(\d+):(\d+):(\d+)$/.exec(raw);
@@ -272,18 +297,49 @@ export async function resolve(ref) {
   throw kino.error("not_found", "unknown ref", { userMessage: "No se encontró este título." });
 }
 
+// ---- Ajustes ▸ KingRed ----
+
 /**
- * The plugin's canvas: the resolver install gate while the recommended resolver is missing, the plain
- * "all set" screen once it is installed. Kino reports the resolver's state in `ctx.installed[<repo>]`
- * (and calls screen() again whenever it changes), so a missing entry is treated as not installed.
- * @param {{ installed?: Record<string, boolean> }} [ctx]
+ * The "Estado" status line on the plugin's own settings page: a short, plain-text summary of the
+ * catalog (≤200 chars). KingRed keeps no per-list cache to count, so the line is a fixed description.
+ * @returns {Promise<{ info: string }>}
  */
-export async function screen(ctx) {
-  const installed = ctx && ctx.installed && ctx.installed[RESOLVER_REPO];
-  return installed ? readyView() : gateView();
+export async function settingsStatus() {
+  return { info: "Catálogo de KingRed: películas y series." };
 }
 
-/** Events from the screen: the install button's `go` is handled by Kino itself, so there is nothing to do. */
-export async function screenEvent() {
-  return null;
+/**
+ * Runs a settings action button. `clearCache` drops ONLY KingRed-owned state -- the cached anonymous
+ * Firebase token (TOKEN_KEY) -- and never touches std's own storage keys; a missing token or an
+ * unavailable storage is swallowed. An unknown key is a no-op `{ message: "" }` (never throws).
+ * @param {string} key
+ * @returns {Promise<{ message: string }>}
+ */
+export async function action(key) {
+  if (key === "clearCache") {
+    try { kino.storage.remove(TOKEN_KEY); } catch (_) { /* nothing to clear */ }
+    return { message: "Listo" };
+  }
+  return { message: "" };
+}
+
+// ---- the screen: the standard xuper-plugin screen (src/std) ----
+
+// KingRed plays every link through the shared kino-resolver door (resolve() refuses with an install prompt while it is
+// missing), so the kit shows its own resolver install gate (`needsResolver: true`) until it is installed, then the browse
+// screen built from TABS / loadTab (src/tabs.js). `hasSettings: true`: the manifest declares the settings form (Task 4).
+let std = null;
+const standard = () => (std ??= makeStandardScreen({
+  kino, name: "KingRed", logo: LOGO, logoAspect: LOGO_ASPECT, needsResolver: true, hasSettings: true,
+  tabs: TABS, loadTab,
+}));
+
+export async function screen(ctx) {
+  await null;
+  return standard().screen(ctx && typeof ctx === "object" ? ctx : {});
+}
+
+export async function screenEvent(ev) {
+  await null;
+  return standard().screenEvent(ev && typeof ev === "object" ? ev : {});
 }
