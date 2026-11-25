@@ -117,6 +117,9 @@ function toSource(source) {
 function toSources(sources) {
   return (Array.isArray(sources) ? sources : []).map(toSource);
 }
+function parseMovie(json) {
+  return toSources(json && json.sources);
+}
 function parseSeries(json) {
   const seasons = /* @__PURE__ */ new Map();
   const temporadas = json && Array.isArray(json.temporadas) ? json.temporadas : [];
@@ -129,6 +132,82 @@ function parseSeries(json) {
     else seasons.set(season, [chapter]);
   }
   return { seasons };
+}
+
+// src/resolve-door.js
+var HLS_MIME = "application/vnd.apple.mpegurl";
+var RESOLVER_ALIAS = "resolver";
+var CAPTURE_MS = 2e4;
+function headersOf(s) {
+  const out = {};
+  if (s.referer) out.Referer = s.referer;
+  const h = s.headers;
+  if (Array.isArray(h)) for (const x of h) {
+    if (x && x.name) out[x.name] = String(x.value);
+  }
+  else if (h && typeof h === "object") for (const [k, v] of Object.entries(h)) {
+    if (v != null) out[k] = String(v);
+  }
+  return out;
+}
+function pickBest(streams) {
+  return streams.find((s) => s && s.url && (s.kind === "hls" || /\.m3u8(\?|$)/i.test(s.url))) || streams.find((s) => s && s.url) || null;
+}
+async function captureStreams(kino2, embedUrl, referer) {
+  const b = kino2 && kino2.browser;
+  if (!b || typeof b.capture !== "function") return [];
+  const opts = { timeoutMs: CAPTURE_MS, match: "\\.m3u8|\\.mp4" };
+  if (referer) opts.headers = { Referer: referer };
+  let cap;
+  try {
+    cap = await b.capture(embedUrl, opts);
+  } catch (_) {
+    return [];
+  }
+  const out = [];
+  for (const m of cap && cap.media || []) {
+    if (!m || !m.url) continue;
+    out.push({ url: m.url, kind: /\.m3u8(\?|$)/i.test(m.url) ? "hls" : "mp4", server: "browser", headers: m.headers || {} });
+  }
+  return out;
+}
+async function resolveViaHelper(embedUrl, kino2, referer, allowCapture = true) {
+  let res = null;
+  try {
+    res = await kino2.plugins.call(RESOLVER_ALIAS, "resolve", { url: embedUrl, referer });
+  } catch (err) {
+    try {
+      kino2.log("[kingred]", "resolver", err && err.code || "call_failed");
+    } catch (_) {
+    }
+  }
+  let streams = res && Array.isArray(res.streams) ? res.streams.slice() : [];
+  const subtitles = res && Array.isArray(res.subtitles) ? res.subtitles.filter((x) => x && x.lang && x.url) : [];
+  let captured = false;
+  const dead = !streams.length && res && res.error === "dead";
+  if (!streams.length && !dead && (typeof allowCapture === "function" ? allowCapture() : allowCapture)) {
+    streams = await captureStreams(kino2, embedUrl, referer);
+    captured = streams.length > 0;
+  }
+  const s = pickBest(streams);
+  if (!s) return null;
+  const headers = headersOf(s);
+  const isHls = s.kind === "hls" || /\.m3u8(\?|$)/i.test(s.url);
+  return {
+    url: s.url,
+    mime: isHls ? HLS_MIME : /\.mp4(\?|$)/i.test(s.url) ? "video/mp4" : void 0,
+    ...Object.keys(headers).length ? { headers } : {},
+    ...captured ? { captured: true } : {},
+    ...subtitles.length ? { subtitles } : {}
+  };
+}
+async function resolverInstalled(kino2) {
+  try {
+    await kino2.plugins.call(RESOLVER_ALIAS, "normalizeHost", { url: "https://probe.invalid/" });
+    return true;
+  } catch (err) {
+    return (err && err.code) !== "provider_missing";
+  }
 }
 
 // src/plugin.js
@@ -204,8 +283,88 @@ async function episodes(ref) {
   list.sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || a.number - b.number);
   return { episodes: list, series: { ids: { tmdb: Number(tmdbId) } } };
 }
-async function resolve() {
-  throw new Error("not implemented");
+var INLINE_SERVERS = ["vidara", "ok.ru", "disk.yandex", "yandex"];
+var MAX_ALTERNATIVES = 8;
+function hostOf(url) {
+  const m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(String(url || ""));
+  return m ? m[1].toLowerCase() : "";
+}
+function tierOf(cleanUrl, serverHint) {
+  const hint = String(serverHint || "").toLowerCase();
+  const host = hostOf(cleanUrl);
+  if (INLINE_SERVERS.some((name) => hint === name || host.includes(name))) return 0;
+  if (/\.(mp4|m3u8|mkv|webm)(\?|#|$)/i.test(cleanUrl)) return 0;
+  return 2;
+}
+function labelOf(lang, serverHint) {
+  return lang + (serverHint ? " · " + serverHint : "");
+}
+async function playFromSources(sources) {
+  const noSources = () => kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
+  if (!sources.length) throw noSources();
+  const ranked = sources.map((source) => {
+    const { url: url2 } = cleanEmbed(source.url);
+    return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url2, tier: tierOf(url2, source.serverHint) };
+  });
+  ranked.sort((a, b) => a.tier - b.tier);
+  let primaryIndex = -1;
+  let stream = null;
+  for (let i = 0; i < ranked.length; i += 1) {
+    stream = await resolveViaHelper(ranked[i].cleanUrl, kino, null, true);
+    if (stream) {
+      primaryIndex = i;
+      break;
+    }
+  }
+  if (!stream) throw noSources();
+  const alternatives = [];
+  for (let i = primaryIndex + 1; i < ranked.length && alternatives.length < MAX_ALTERNATIVES; i += 1) {
+    const r = ranked[i];
+    alternatives.push({ label: labelOf(r.lang, r.serverHint), ref: "k:" + r.lang + ":" + r.cleanUrl });
+  }
+  const primary = ranked[primaryIndex];
+  const { url, mime, headers, subtitles } = stream;
+  return {
+    url,
+    ...mime !== void 0 ? { mime } : {},
+    ...headers !== void 0 ? { headers } : {},
+    ...subtitles !== void 0 ? { subtitles } : {},
+    label: labelOf(primary.lang, primary.serverHint),
+    alternatives
+  };
+}
+async function resolve(ref) {
+  const raw = typeof ref === "string" ? ref : "";
+  if (raw.startsWith("k:")) {
+    const rest = raw.slice(2);
+    const i = rest.indexOf(":");
+    const lang = rest.slice(0, i);
+    const embedUrl = rest.slice(i + 1);
+    const s = await resolveViaHelper(embedUrl, kino, null, true);
+    if (!s) throw kino.error("not_found", "dead", { userMessage: "Este servidor no está disponible." });
+    return { ...s, label: lang };
+  }
+  if (!await resolverInstalled(kino)) {
+    throw kino.error("unavailable", "resolver missing", {
+      userMessage: "Para reproducir, instala el motor de reproducción (Kino Resolver) que el plugin te pedirá."
+    });
+  }
+  if (raw.startsWith("m:")) {
+    const id = raw.slice(2);
+    return playFromSources(parseMovie(await storageJson("SourcesM/" + id + ".json")));
+  }
+  const chapter = /^t:(\d+):(\d+):(\d+)$/.exec(raw);
+  if (chapter) {
+    const [, id, s, e] = chapter;
+    const { seasons } = parseSeries(await storageJson("SourcesT/" + id + ".json"));
+    for (const chapters of seasons.values()) {
+      for (const c of chapters) {
+        if (c.season === Number(s) && c.episode === Number(e)) return playFromSources(c.sources);
+      }
+    }
+    throw kino.error("not_found", "chapter not found", { userMessage: "Este capítulo no está disponible." });
+  }
+  throw kino.error("not_found", "unknown ref", { userMessage: "No se encontró este título." });
 }
 async function screen() {
   return { title: "KingRed", rows: [] };

@@ -9,7 +9,8 @@
 // remaining contract functions are still stubs filled in by later tasks.
 import { catalogPage } from "./api.js";
 import { storageJson } from "./firebase.js";
-import { parseSeries } from "./streams.js";
+import { parseMovie, parseSeries, cleanEmbed } from "./streams.js";
+import { resolveViaHelper, resolverInstalled } from "./resolve-door.js";
 
 // The Home rows, in the order Kino shows them (movies first, then series). Each row is the catalog's
 // FIRST page for a `sort` or `category`: there is no browse pagination (the plugin does not declare
@@ -113,9 +114,132 @@ export async function episodes(ref) {
   return { episodes: list, series: { ids: { tmdb: Number(tmdbId) } } };
 }
 
-/** Resolve a movie or chapter to a playable stream via the kino-resolver door. */
-export async function resolve() {
-  throw new Error("not implemented");
+// Hosts/servers that play straight away (the resolver reads them inline, no 20 s gate): they rank first so the
+// person waits as little as possible. Everything else (streamwish, filelions, an unknown host) is a slow gate.
+const INLINE_SERVERS = ["vidara", "ok.ru", "disk.yandex", "yandex"];
+/** At most this many lazy copies ride along in a Stream's `alternatives` (the KinoStream limit). */
+const MAX_ALTERNATIVES = 8;
+
+/** The host of an absolute url (lowercased), or "" when it has none -- for inline-host matching. */
+function hostOf(url) {
+  const m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(String(url || ""));
+  return m ? m[1].toLowerCase() : "";
+}
+
+/**
+ * A source's rank: 0 (fast/inline) when its serverHint or cleaned host is an INLINE_SERVER or it is a bare
+ * direct file, else 2 (slow gate: streamwish/filelions/unknown). Lower plays first.
+ */
+function tierOf(cleanUrl, serverHint) {
+  const hint = String(serverHint || "").toLowerCase();
+  const host = hostOf(cleanUrl);
+  if (INLINE_SERVERS.some((name) => hint === name || host.includes(name))) return 0;
+  if (/\.(mp4|m3u8|mkv|webm)(\?|#|$)/i.test(cleanUrl)) return 0;
+  return 2;
+}
+
+/** A copy's "Servidor" label: the language, plus the hoster when known ("Latino · streamwish"). */
+function labelOf(lang, serverHint) {
+  return lang + (serverHint ? " · " + serverHint : "");
+}
+
+/**
+ * Cleans, ranks (inline-first, stable) and resolves a title's sources through the kino-resolver door until the
+ * FIRST one plays -- that copy is the KinoStream, every ranked copy AFTER it rides along as a lazy `{ label, ref }`
+ * alternative (a `k:<lang>:<cleanUrl>` ref back to resolve()). Throws `not_found` with a readable message when
+ * there are no sources or none resolve.
+ * @param {import("./streams.js").Source[]} sources
+ * @returns {Promise<import("../kino.d.ts").KinoStream>}
+ */
+async function playFromSources(sources) {
+  const noSources = () =>
+    kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
+  if (!sources.length) throw noSources();
+
+  // Clean each embed once (idempotent on an already-clean url) and tag it with its tier, then stable-sort
+  // ascending by tier: Array.prototype.sort keeps equal-tier copies in their original (file) order.
+  const ranked = sources.map((source) => {
+    const { url } = cleanEmbed(source.url);
+    return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url, tier: tierOf(url, source.serverHint) };
+  });
+  ranked.sort((a, b) => a.tier - b.tier);
+
+  // Resolve in ranked order; the first non-null wins. Copies tried-and-failed before it are dropped.
+  let primaryIndex = -1;
+  let stream = null;
+  for (let i = 0; i < ranked.length; i += 1) {
+    stream = await resolveViaHelper(ranked[i].cleanUrl, kino, null, true);
+    if (stream) { primaryIndex = i; break; }
+  }
+  if (!stream) throw noSources();
+
+  /** @type {import("../kino.d.ts").KinoStreamAlternative[]} */
+  const alternatives = [];
+  for (let i = primaryIndex + 1; i < ranked.length && alternatives.length < MAX_ALTERNATIVES; i += 1) {
+    const r = ranked[i];
+    alternatives.push({ label: labelOf(r.lang, r.serverHint), ref: "k:" + r.lang + ":" + r.cleanUrl });
+  }
+
+  const primary = ranked[primaryIndex];
+  const { url, mime, headers, subtitles } = stream;
+  return {
+    url,
+    ...(mime !== undefined ? { mime } : {}),
+    ...(headers !== undefined ? { headers } : {}),
+    ...(subtitles !== undefined ? { subtitles } : {}),
+    label: labelOf(primary.lang, primary.serverHint),
+    alternatives,
+  };
+}
+
+/**
+ * Resolve a movie, a chapter or a lazy single copy to a playable stream through the kino-resolver door.
+ *   `m:<id>`              -> the movie's SourcesM sources, ranked and played (best copy + alternatives).
+ *   `t:<id>:<s>:<e>`      -> that chapter's SourcesT sources, same.
+ *   `k:<lang>:<embedUrl>` -> ONE embed this plugin itself emitted as an alternative, resolved directly.
+ * A `k:` ref may resolve straight away; every other ref first checks the resolver is installed (before touching
+ * storage) and, when it is not, throws `unavailable` with the install prompt.
+ * @param {string} ref
+ * @returns {Promise<import("../kino.d.ts").KinoStream>}
+ */
+export async function resolve(ref) {
+  const raw = typeof ref === "string" ? ref : "";
+
+  // A lazy copy the "Servidor" menu handed back: resolve just that embed (its own `://` colons are kept).
+  if (raw.startsWith("k:")) {
+    const rest = raw.slice(2);
+    const i = rest.indexOf(":");
+    const lang = rest.slice(0, i);
+    const embedUrl = rest.slice(i + 1);
+    const s = await resolveViaHelper(embedUrl, kino, null, true);
+    if (!s) throw kino.error("not_found", "dead", { userMessage: "Este servidor no está disponible." });
+    return { ...s, label: lang };
+  }
+
+  if (!(await resolverInstalled(kino))) {
+    throw kino.error("unavailable", "resolver missing", {
+      userMessage: "Para reproducir, instala el motor de reproducción (Kino Resolver) que el plugin te pedirá.",
+    });
+  }
+
+  if (raw.startsWith("m:")) {
+    const id = raw.slice(2);
+    return playFromSources(parseMovie(await storageJson("SourcesM/" + id + ".json")));
+  }
+
+  const chapter = /^t:(\d+):(\d+):(\d+)$/.exec(raw);
+  if (chapter) {
+    const [, id, s, e] = chapter;
+    const { seasons } = parseSeries(await storageJson("SourcesT/" + id + ".json"));
+    for (const chapters of seasons.values()) {
+      for (const c of chapters) {
+        if (c.season === Number(s) && c.episode === Number(e)) return playFromSources(c.sources);
+      }
+    }
+    throw kino.error("not_found", "chapter not found", { userMessage: "Este capítulo no está disponible." });
+  }
+
+  throw kino.error("not_found", "unknown ref", { userMessage: "No se encontró este título." });
 }
 
 /** The plugin's canvas: the resolver install gate once the real screen lands. */
