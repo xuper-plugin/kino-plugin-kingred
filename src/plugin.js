@@ -116,7 +116,7 @@ export async function episodes(ref) {
 
 // Hosts/servers that play straight away (the resolver reads them inline, no 20 s gate): they rank first so the
 // person waits as little as possible. Everything else (streamwish, filelions, an unknown host) is a slow gate.
-const INLINE_SERVERS = ["vidara", "ok.ru", "disk.yandex", "yandex"];
+const INLINE_SERVERS = ["vidara", "ok.ru", "disk.yandex"];
 /** At most this many lazy copies ride along in a Stream's `alternatives` (the KinoStream limit). */
 const MAX_ALTERNATIVES = 8;
 
@@ -154,7 +154,7 @@ function labelOf(lang, serverHint) {
 async function playFromSources(sources) {
   const noSources = () =>
     kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
-  if (!sources.length) throw noSources();
+  if (!Array.isArray(sources) || !sources.length) throw noSources();
 
   // Clean each embed once (idempotent on an already-clean url) and tag it with its tier, then stable-sort
   // ascending by tier: Array.prototype.sort keeps equal-tier copies in their original (file) order.
@@ -209,6 +209,7 @@ export async function resolve(ref) {
   if (raw.startsWith("k:")) {
     const rest = raw.slice(2);
     const i = rest.indexOf(":");
+    if (i < 0) throw kino.error("not_found", "bad ref", { userMessage: "Enlace no válido." });
     const lang = rest.slice(0, i);
     const embedUrl = rest.slice(i + 1);
     const s = await resolveViaHelper(embedUrl, kino, null, true);

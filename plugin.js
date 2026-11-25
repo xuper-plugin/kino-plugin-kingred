@@ -283,7 +283,7 @@ async function episodes(ref) {
   list.sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || a.number - b.number);
   return { episodes: list, series: { ids: { tmdb: Number(tmdbId) } } };
 }
-var INLINE_SERVERS = ["vidara", "ok.ru", "disk.yandex", "yandex"];
+var INLINE_SERVERS = ["vidara", "ok.ru", "disk.yandex"];
 var MAX_ALTERNATIVES = 8;
 function hostOf(url) {
   const m = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(String(url || ""));
@@ -301,7 +301,7 @@ function labelOf(lang, serverHint) {
 }
 async function playFromSources(sources) {
   const noSources = () => kino.error("not_found", "no sources", { userMessage: "No hay servidores disponibles para este título." });
-  if (!sources.length) throw noSources();
+  if (!Array.isArray(sources) || !sources.length) throw noSources();
   const ranked = sources.map((source) => {
     const { url: url2 } = cleanEmbed(source.url);
     return { lang: source.lang, serverHint: source.serverHint, cleanUrl: url2, tier: tierOf(url2, source.serverHint) };
@@ -338,6 +338,7 @@ async function resolve(ref) {
   if (raw.startsWith("k:")) {
     const rest = raw.slice(2);
     const i = rest.indexOf(":");
+    if (i < 0) throw kino.error("not_found", "bad ref", { userMessage: "Enlace no válido." });
     const lang = rest.slice(0, i);
     const embedUrl = rest.slice(i + 1);
     const s = await resolveViaHelper(embedUrl, kino, null, true);

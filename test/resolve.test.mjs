@@ -86,7 +86,7 @@ function installKino({ docs = {}, door = {}, capture = {}, probe = "ok" } = {}) 
 afterEach(() => { delete globalThis.kino; });
 
 test("(a) m:<id> with the first inline source resolving returns a KinoStream with lazy alternatives", async () => {
-  installKino({
+  const { calls } = installKino({
     docs: { "1263337": MOVIE_DOC },
     door: { [MOVIE_FIRST]: { streams: [{ url: "https://cdn/movie.m3u8", server: "yandex" }] } },
   });
@@ -99,6 +99,10 @@ test("(a) m:<id> with the first inline source resolving returns a KinoStream wit
   assert.equal(stream.mime, HLS_MIME);
   assert.ok(typeof stream.label === "string" && stream.label.length > 0, "a non-empty label");
 
+  // Laziness: the primary resolved first, so NO other source was touched -- exactly one door resolve call.
+  assert.equal(calls.resolve.length, 1, "resolving stops at the primary; the rest stay lazy");
+  assert.equal(calls.resolve[0], MOVIE_FIRST, "the one door call was for the first ranked (inline) source");
+
   assert.ok(Array.isArray(stream.alternatives), "alternatives is an array");
   assert.ok(stream.alternatives.length > 0, "a resolved primary leaves untried copies as alternatives");
   assert.ok(stream.alternatives.length <= 8, "at most 8 alternatives");
@@ -107,6 +111,30 @@ test("(a) m:<id> with the first inline source resolving returns a KinoStream wit
     assert.ok(alt.label.length > 0, "each alternative has a non-empty label");
     assert.ok(typeof alt.ref === "string" && alt.ref.startsWith("k:"), "each alternative is a lazy k: ref");
   }
+});
+
+test("(g) an alternative's ref round-trips: feeding it back to resolve() plays that copy", async () => {
+  installKino({
+    docs: { "1263337": MOVIE_DOC },
+    door: { [MOVIE_FIRST]: { streams: [{ url: "https://cdn/movie.m3u8", server: "yandex" }] } },
+  });
+
+  const { alternatives } = await resolve("m:1263337");
+  const alt = alternatives[0];
+
+  // The lazy ref the "Servidor" menu would hand back: k:<lang>:<embedUrl> (embedUrl keeps its own `://`).
+  const rest = alt.ref.slice(2);
+  const i = rest.indexOf(":");
+  const lang = rest.slice(0, i);
+  const embedUrl = rest.slice(i + 1);
+  assert.ok(embedUrl.startsWith("http"), "the ref carries a real embed url");
+
+  // Close the loop: a fresh kino whose door resolves exactly that embed.
+  installKino({ door: { [embedUrl]: { streams: [{ url: "https://cdn/alt.m3u8" }] } } });
+
+  const stream = await resolve(alt.ref);
+  assert.equal(stream.url, "https://cdn/alt.m3u8", "the alternative resolves to a playable stream");
+  assert.equal(stream.label, lang, "and it is labeled with that copy's language");
 });
 
 test("(b) a provider_missing door probe makes resolve() throw unavailable with a userMessage", async () => {
