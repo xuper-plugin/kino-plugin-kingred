@@ -8,6 +8,8 @@
 // the design's rows (one catalog first-page each), search() runs `q=` over movies and series. The
 // remaining contract functions are still stubs filled in by later tasks.
 import { catalogPage } from "./api.js";
+import { storageJson } from "./firebase.js";
+import { parseSeries } from "./streams.js";
 
 // The Home rows, in the order Kino shows them (movies first, then series). Each row is the catalog's
 // FIRST page for a `sort` or `category`: there is no browse pagination (the plugin does not declare
@@ -70,9 +72,45 @@ export async function search(query) {
   return [...movies, ...series];
 }
 
-/** A series' seasons and chapters (from SourcesT in Firebase Storage). */
-export async function episodes() {
-  return { seasons: [], episodes: [] };
+/**
+ * A series' episodes, flattened across all its seasons. `ref` is `"t:<tmdbId>"`: episodes() downloads
+ * SourcesT/<tmdbId>.json from Firebase Storage and turns the parsed seasons into a single KinoEpisode[],
+ * sorted by season then episode ascending (the raw file may list chapters descending). Each episode's
+ * `ref` is `"t:<tmdbId>:<season>:<episode>"`, the shape resolve() consumes. No `seasons` is returned --
+ * Kino derives the season selector from each episode's `season`. A bad ref, a missing/empty document or
+ * one without `temporadas` yields `{ episodes: [] }` instead of throwing, so the screen never breaks.
+ * @param {string} ref
+ * @returns {Promise<import("../kino.d.ts").KinoEpisodes>}
+ */
+export async function episodes(ref) {
+  const match = /^t:(\d+)$/.exec(typeof ref === "string" ? ref : "");
+  if (!match) return { episodes: [] };
+  const tmdbId = match[1];
+
+  let doc;
+  try {
+    doc = await storageJson("SourcesT/" + tmdbId + ".json");
+  } catch {
+    return { episodes: [] };
+  }
+  if (!doc || !Array.isArray(doc.temporadas)) return { episodes: [] };
+
+  const { seasons } = parseSeries(doc);
+  /** @type {import("../kino.d.ts").KinoEpisode[]} */
+  const list = [];
+  for (const chapters of seasons.values()) {
+    for (const { season, episode } of chapters) {
+      list.push({
+        season,
+        number: episode,
+        ref: "t:" + tmdbId + ":" + season + ":" + episode,
+        title: "Capítulo " + episode,
+      });
+    }
+  }
+  list.sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || a.number - b.number);
+
+  return { episodes: list, series: { ids: { tmdb: Number(tmdbId) } } };
 }
 
 /** Resolve a movie or chapter to a playable stream via the kino-resolver door. */

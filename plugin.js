@@ -36,6 +36,101 @@ async function catalogPage({ kind, page = 1, category, sort, q }) {
   return { items, totalPages };
 }
 
+// src/firebase.js
+var API_KEY = "AIzaSyCEvQwLPt1CFDPCVy1bLptJ6SzO356G3sk";
+var SIGNUP_URL = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${API_KEY}`;
+var STORAGE_BASE = "https://firebasestorage.googleapis.com/v0/b/duo-play.appspot.com/o/";
+var TOKEN_KEY = "kingred:fbToken";
+var SAFETY_MS = 5 * 60 * 1e3;
+function readCachedToken() {
+  const raw = kino.storage.get(TOKEN_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.token === "string" && typeof parsed.exp === "number") return parsed;
+  } catch {
+  }
+  return null;
+}
+async function renewToken() {
+  const res = await kino.fetch(SIGNUP_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ returnSecureToken: true })
+  });
+  if (!res.ok) throw new Error(`Firebase signUp failed: HTTP ${res.status}`);
+  const body = res.json();
+  const token = body && body.idToken;
+  if (!token || typeof token !== "string") throw new Error("Firebase signUp: no idToken in response");
+  const expiresIn = Number(body && body.expiresIn);
+  const ttlMs = (Number.isFinite(expiresIn) ? expiresIn : 3600) * 1e3;
+  const exp = Date.now() + ttlMs;
+  kino.storage.set(TOKEN_KEY, JSON.stringify({ token, exp }));
+  return token;
+}
+async function idToken() {
+  const cached = readCachedToken();
+  if (cached && Date.now() < cached.exp - SAFETY_MS) return cached.token;
+  return renewToken();
+}
+function storageGet(path, token) {
+  const url = STORAGE_BASE + encodeURIComponent(path) + "?alt=media";
+  return kino.fetch(url, { headers: { Authorization: `Firebase ${token}` } });
+}
+async function storageJson(path) {
+  let res = await storageGet(path, await idToken());
+  if (res.status === 401 || res.status === 403) {
+    res = await storageGet(path, await renewToken());
+  }
+  if (!res.ok) throw new Error(`Firebase storage ${res.status} for ${path}`);
+  return res.json();
+}
+
+// src/streams.js
+var SERVER_BY_TOKEN = {
+  vida: "vidara",
+  wish: "streamwish",
+  lion: "filelions"
+};
+function cleanEmbed(raw) {
+  const sep = raw.indexOf("::");
+  if (sep > 0 && raw[sep + 2] !== "/") {
+    const token = raw.slice(0, sep);
+    return { url: raw.slice(sep + 2), serverHint: SERVER_BY_TOKEN[token] || token };
+  }
+  return { url: raw };
+}
+function mapLang(idioma) {
+  const s = String(idioma || "").toLowerCase();
+  if (s.includes("latino")) return "Latino";
+  if (s.includes("castellano")) return "Castellano";
+  if (s.includes("sub")) return "Subtitulado";
+  return "Otro";
+}
+function toSource(source) {
+  const label = source.idioma != null ? source.idioma : source.language != null ? source.language : "";
+  const { url, serverHint } = cleanEmbed(String(source.url));
+  const out = { lang: mapLang(label), label, url };
+  if (serverHint !== void 0) out.serverHint = serverHint;
+  return out;
+}
+function toSources(sources) {
+  return (Array.isArray(sources) ? sources : []).map(toSource);
+}
+function parseSeries(json) {
+  const seasons = /* @__PURE__ */ new Map();
+  const temporadas = json && Array.isArray(json.temporadas) ? json.temporadas : [];
+  for (const t of temporadas) {
+    const season = Number(t.temporada);
+    const episode = Number(t.capitulo);
+    const chapter = { season, episode, sources: toSources(t.sources) };
+    const list = seasons.get(season);
+    if (list) list.push(chapter);
+    else seasons.set(season, [chapter]);
+  }
+  return { seasons };
+}
+
 // src/plugin.js
 var HOME_ROWS = [
   { id: "movies-popular", title: "Películas populares", query: { kind: "movies", sort: "popular" } },
@@ -83,8 +178,31 @@ async function search(query) {
   const [movies, series] = await Promise.all([page("movies"), page("series")]);
   return [...movies, ...series];
 }
-async function episodes() {
-  return { seasons: [], episodes: [] };
+async function episodes(ref) {
+  const match = /^t:(\d+)$/.exec(typeof ref === "string" ? ref : "");
+  if (!match) return { episodes: [] };
+  const tmdbId = match[1];
+  let doc;
+  try {
+    doc = await storageJson("SourcesT/" + tmdbId + ".json");
+  } catch {
+    return { episodes: [] };
+  }
+  if (!doc || !Array.isArray(doc.temporadas)) return { episodes: [] };
+  const { seasons } = parseSeries(doc);
+  const list = [];
+  for (const chapters of seasons.values()) {
+    for (const { season, episode } of chapters) {
+      list.push({
+        season,
+        number: episode,
+        ref: "t:" + tmdbId + ":" + season + ":" + episode,
+        title: "Capítulo " + episode
+      });
+    }
+  }
+  list.sort((a, b) => (a.season ?? 0) - (b.season ?? 0) || a.number - b.number);
+  return { episodes: list, series: { ids: { tmdb: Number(tmdbId) } } };
 }
 async function resolve() {
   throw new Error("not implemented");
