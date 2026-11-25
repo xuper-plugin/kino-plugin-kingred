@@ -6,6 +6,12 @@ Expone el catálogo público de KingRed —~21.000 películas y ~8.500 series—
 búsqueda, fichas y temporadas. La reproducción se delega al motor compartido
 **[Kino Resolver](https://github.com/xuper-plugin/kino-plugin-kino-resolver)**.
 
+## Pantalla propia
+
+KingRed trae su **pantalla propia** con pestañas (Inicio, Películas, Series, Animes,
+Doramas, Acción, Terror, Comedia) y un **buscador integrado**. Desde ahí se abre también
+la página de **Ajustes**.
+
 ## Requisitos
 
 Este plugin **necesita el plugin Kino Resolver** para reproducir: cada enlace
@@ -18,7 +24,9 @@ WebView propio de KingRed (por eso figuran en `hosts`).
 ## Idiomas
 
 El catálogo trae pistas en **Latino**, **Castellano** y **Subtitulado**; Kino abre la que
-haya disponible por título y, si una falla, prueba las demás.
+haya disponible por título y, si una falla, prueba las demás. En **Ajustes** eliges tu
+**Idioma preferido** (Latino, Castellano o Subtitulado) y la reproducción arranca con ese
+audio por defecto.
 
 ## Desarrollo
 
