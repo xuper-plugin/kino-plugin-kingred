@@ -1,0 +1,16 @@
+{
+  "name": "kino-plugin-kingred",
+  "private": true,
+  "type": "module",
+  "description": "KingRed: movies and series catalog (com.poison.kingred) as a Kino plugin. Source in src/, bundled into plugin.js; hosters delegated to kino-resolver.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check:built": "node scripts/build.mjs --check",
+    "test": "node --test test/*.test.mjs",
+    "validate": "node scripts/build.mjs && node sdk/validate.mjs . --repo xuper-plugin/kino-plugin-kingred"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  }
+}
