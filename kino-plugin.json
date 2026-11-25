@@ -19,6 +19,7 @@
     "search",
     "home",
     "resolve",
+    "episodes",
     "screen"
   ],
   "browser": true,

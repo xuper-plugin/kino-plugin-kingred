@@ -19,9 +19,9 @@ test("apiVersion is at least 20 (the plugin protocol / resolver door)", () => {
   assert.ok(manifest.apiVersion >= 20, `apiVersion ${manifest.apiVersion} < 20`);
 });
 
-test("capabilities include search, home and resolve", () => {
+test("capabilities include search, home, resolve and episodes", () => {
   assert.ok(Array.isArray(manifest.capabilities));
-  for (const cap of ["search", "home", "resolve"]) {
+  for (const cap of ["search", "home", "resolve", "episodes"]) {
     assert.ok(manifest.capabilities.includes(cap), `missing capability "${cap}"`);
   }
 });
